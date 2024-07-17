@@ -20,8 +20,4 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\HomeBudget.Core\HomeBudget.Core.csproj" />
-  </ItemGroup>
-
 </Project>

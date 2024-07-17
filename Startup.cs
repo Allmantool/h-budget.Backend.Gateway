@@ -27,7 +27,7 @@ namespace HomeBudget.Backend.Gateway
 
             services.AddOcelot(Configuration);
 
-            services.AddJwt(Configuration); // JWT Configuration
+            // services.AddJwt(Configuration); // JWT Configuration
 
             services.AddCors(options =>
             {
@@ -51,7 +51,7 @@ namespace HomeBudget.Backend.Gateway
             services.AddHealthChecksUI().AddInMemoryStorage();
         }
 
-        public async Task Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             if (env.IsDevelopment())
             {
@@ -76,7 +76,7 @@ namespace HomeBudget.Backend.Gateway
             option.AddRedirect("^$", "healthchecks-ui");
             app.UseRewriter(option);
 
-            await app.UseOcelot();
+            app.UseOcelot();
         }
     }
 }

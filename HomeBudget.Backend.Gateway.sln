@@ -7,7 +7,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HomeBudget.Backend.Gateway"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Core", "Core", "{F0AD14A6-57DD-4F28-9801-D2150EA00B38}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HomeBudget.Core", "HomeBudget.Core\HomeBudget.Core.csproj", "{6369D72B-6C27-4BEB-B865-F934E5E9C878}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HomeBudget.Core", "HomeBudget.Core\HomeBudget.Core.csproj", "{0FD930C9-8C93-457E-A2FC-6933126AF60F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -19,16 +19,16 @@ Global
 		{ED6559B3-35BD-4581-9431-4B3DC5A97341}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{ED6559B3-35BD-4581-9431-4B3DC5A97341}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{ED6559B3-35BD-4581-9431-4B3DC5A97341}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6369D72B-6C27-4BEB-B865-F934E5E9C878}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6369D72B-6C27-4BEB-B865-F934E5E9C878}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6369D72B-6C27-4BEB-B865-F934E5E9C878}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6369D72B-6C27-4BEB-B865-F934E5E9C878}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0FD930C9-8C93-457E-A2FC-6933126AF60F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0FD930C9-8C93-457E-A2FC-6933126AF60F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0FD930C9-8C93-457E-A2FC-6933126AF60F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0FD930C9-8C93-457E-A2FC-6933126AF60F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{6369D72B-6C27-4BEB-B865-F934E5E9C878} = {F0AD14A6-57DD-4F28-9801-D2150EA00B38}
+		{0FD930C9-8C93-457E-A2FC-6933126AF60F} = {F0AD14A6-57DD-4F28-9801-D2150EA00B38}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0AE90F7-24E9-4AFE-BBC7-BE819CBAF454}

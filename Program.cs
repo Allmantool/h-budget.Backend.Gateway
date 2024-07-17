@@ -9,15 +9,17 @@ using HomeBudget.Backend.Gateway;
 var builder = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((hostingContext, config) =>
     {
+        var environment = hostingContext.HostingEnvironment.EnvironmentName;
+
         config
             .SetBasePath(hostingContext.HostingEnvironment.ContentRootPath)
             .AddJsonFile("appsettings.json", true, true)
             .AddJsonFile("ocelot.json", false, true)
-            .AddJsonFile($"appsettings.{hostingContext.HostingEnvironment.EnvironmentName}.json", true, true)
-            .AddJsonFile($"ocelot.{hostingContext.HostingEnvironment.EnvironmentName}.json", optional: false, reloadOnChange: true)
+            .AddJsonFile($"appsettings.{environment}.json", true, true)
+            .AddJsonFile($"ocelot.{environment}.json", optional: true, reloadOnChange: true)
             .AddEnvironmentVariables();
 
-        if (hostingContext.HostingEnvironment.EnvironmentName == "Development")
+        if (string.Equals(environment, "Development"))
         {
             config.AddJsonFile("appsettings.Local.json", true, true);
         }
@@ -35,4 +37,4 @@ var builder = Host.CreateDefaultBuilder(args)
         webBuilder.UseStartup<Startup>();
     });
 
-builder.Build().RunAsync();
+await builder.Build().RunAsync();
