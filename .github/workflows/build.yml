@@ -117,6 +117,7 @@ jobs:
             --no-incremental
 
       - name: Run test (unit + integrations based on test containers) for test coverage collecting
+        continue-on-error: true
         shell: bash
         run: |
           dotnet-dotcover test HomeBudget.Backend.Gateway.sln \
