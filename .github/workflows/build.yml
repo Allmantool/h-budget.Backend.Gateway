@@ -113,14 +113,14 @@ jobs:
       - name: Build the solution to quality metrics gathering
         shell: bash
         run: |
-          dotnet build HomeBudget.Backend.Gateway.sln \
+          dotnet build HomeBudgetBackendGateway.sln \
             --no-incremental
 
       - name: Run test (unit + integrations based on test containers) for test coverage collecting
         continue-on-error: true
         shell: bash
         run: |
-          dotnet-dotcover test HomeBudget.Backend.Gateway.sln \
+          dotnet-dotcover test HomeBudgetBackendGateway.sln \
             --dcReportType=HTML \
             --dcOutput="test-results/backend-gateway-coverage.html" \
             --dcFilters="+:HomeBudget.*;-:type=*.IntegrationTests;-:type=*.Tests"

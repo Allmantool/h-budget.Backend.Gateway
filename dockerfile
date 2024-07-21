@@ -45,20 +45,20 @@ RUN echo "##vso[task.prependpath]$HOME/.dotnet/tools"
 RUN export PATH="$PATH:/root/.dotnet/tools"
 
 COPY ["HomeBudget.Core/*.csproj", "HomeBudget.Core/"]
-COPY ["HomeBudget.Backend.Gateway.Api/*.csproj", "HomeBudget.Rates.Api/"]
+COPY ["HomeBudget.Backend.Gateway/*.csproj", "HomeBudget.Backend.Gateway.Api/"]
 
-COPY ["HomeBudgetRatesApi.sln", "HomeBudgetRatesApi.sln"]
+COPY ["HomeBudgetBackendGateway.sln", "HomeBudgetBackendGateway.sln"]
 
 COPY ["startsonar.sh", "startsonar.sh"]
 
 COPY . .
 
-RUN dotnet build HomeBudgetRatesApi.sln -c Release --no-incremental --framework:net8.0 -maxcpucount:1 -o /app/build
+RUN dotnet build HomeBudgetBackendGateway.sln -c Release --no-incremental --framework:net8.0 -maxcpucount:1 -o /app/build
 
 RUN /tools/snitch
 
 FROM build AS publish
-RUN dotnet publish HomeBudget.Backend.Gateway.sln \
+RUN dotnet publish HomeBudgetBackendGateway.sln \
     --no-dependencies \
     --no-restore \
     --framework net8.0 \
@@ -72,4 +72,4 @@ LABEL build_version="${BUILD_VERSION}"
 LABEL service=BackendGateway
 COPY --from=publish /app/publish .
 
-ENTRYPOINT ["dotnet", "HomeBudget.Backend.Gateway.dll"]
+ENTRYPOINT ["dotnet", "HomeBudgetBackendGateway.dll"]
