@@ -38,8 +38,6 @@ namespace HomeBudget.Backend.Gateway
                 app.UseDeveloperExceptionPage();
             }
 
-            app.UseMiddleware<RequestResponseLogging>();
-
             app.UseCors("CorsPolicy");
 
             var option = new RewriteOptions();
@@ -48,6 +46,8 @@ namespace HomeBudget.Backend.Gateway
             app.UseRewriter(option);
 
             app.UseOcelot();
+
+            app.UseMiddleware<OcelotLoggingMiddleware>();
         }
     }
 }
