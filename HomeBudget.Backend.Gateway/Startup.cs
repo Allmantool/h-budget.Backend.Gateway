@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Rewrite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -39,11 +38,6 @@ namespace HomeBudget.Backend.Gateway
             }
 
             app.UseCors("CorsPolicy");
-
-            var option = new RewriteOptions();
-            option.AddRedirect("^$", "healthchecks-ui");
-
-            app.UseRewriter(option);
 
             app.UseOcelot();
 
