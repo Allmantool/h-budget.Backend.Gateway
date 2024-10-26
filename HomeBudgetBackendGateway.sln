@@ -9,6 +9,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HomeBudget.Core", "HomeBudg
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HomeBudget.Backend.Gateway", "HomeBudget.Backend.Gateway\HomeBudget.Backend.Gateway.csproj", "{EC5F716D-4707-4FF6-96C4-BED4444D9763}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{C4C6CE63-CE20-44A2-BDF0-BC5548211CF2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HomeBudget.Backend.Gateway.Api.Tests", "HomeBudget.Backend.Gateway.Api.Tests\HomeBudget.Backend.Gateway.Api.Tests.csproj", "{93A02F92-23AA-4228-83C4-C4C94BF5CB66}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -23,12 +27,17 @@ Global
 		{EC5F716D-4707-4FF6-96C4-BED4444D9763}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EC5F716D-4707-4FF6-96C4-BED4444D9763}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EC5F716D-4707-4FF6-96C4-BED4444D9763}.Release|Any CPU.Build.0 = Release|Any CPU
+		{93A02F92-23AA-4228-83C4-C4C94BF5CB66}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{93A02F92-23AA-4228-83C4-C4C94BF5CB66}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{93A02F92-23AA-4228-83C4-C4C94BF5CB66}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{93A02F92-23AA-4228-83C4-C4C94BF5CB66}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{C1335077-4B8F-4970-B4AD-CB951FF65829} = {F0AD14A6-57DD-4F28-9801-D2150EA00B38}
+		{93A02F92-23AA-4228-83C4-C4C94BF5CB66} = {C4C6CE63-CE20-44A2-BDF0-BC5548211CF2}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {A0AE90F7-24E9-4AFE-BBC7-BE819CBAF454}
