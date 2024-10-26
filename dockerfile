@@ -72,4 +72,4 @@ LABEL build_version="${BUILD_VERSION}"
 LABEL service=BackendGateway
 COPY --from=publish /app/publish .
 
-ENTRYPOINT ["dotnet", "HomeBudgetBackendGateway.dll"]
+ENTRYPOINT ["dotnet", "HomeBudget.Backend.Gateway.dll"]
