@@ -1,10 +1,11 @@
-﻿using Microsoft.AspNetCore.Hosting;
+﻿using System;
+
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-using Serilog;
-using Serilog.Events;
 
 using HomeBudget.Backend.Gateway;
+using HomeBudget.Backend.Gateway.Models;
 
 var builder = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((hostingContext, config) =>
@@ -24,17 +25,25 @@ var builder = Host.CreateDefaultBuilder(args)
             config.AddJsonFile("appsettings.Local.json", true, true);
         }
     })
-    .UseSerilog((_, config) =>
+    .ConfigureWebHostDefaults((webBuilder) =>
     {
-        config
-            .MinimumLevel.Information()
-            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-            .Enrich.FromLogContext()
-            .WriteTo.Console();
-    })
-    .ConfigureWebHostDefaults(webBuilder =>
-    {
-        webBuilder.UseStartup<Startup>();
+        webBuilder.UseStartup<Startup>().ConfigureKestrel((context, serverOptions) =>
+        {
+            var configuration = context.Configuration;
+            var sslOptions = configuration.GetSection(nameof(SslOptions)).Get<SslOptions>();
+
+            serverOptions.ListenAnyIP(sslOptions.Port, listenOptions =>
+            {
+                if (string.IsNullOrWhiteSpace(sslOptions.CertificateName) || string.IsNullOrWhiteSpace(sslOptions.Password))
+                {
+                    throw new InvalidOperationException("HTTPS configuration is missing in appsettings.json");
+                }
+                else
+                {
+                    listenOptions.UseHttps(sslOptions.CertificateName, sslOptions.Password);
+                }
+            });
+        });
     });
 
 await builder.Build().RunAsync();
