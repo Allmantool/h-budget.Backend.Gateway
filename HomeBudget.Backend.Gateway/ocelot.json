@@ -2,61 +2,75 @@
   "Routes": [
     {
       "UpstreamPathTemplate": "/gateway/accounting/{entity}/{paymentAccountId}/byId/{operationId}",
-      "UpstreamHttpMethod": [ "GET" ],
+      "UpstreamHttpMethod": [
+        "GET"
+      ],
       "DownstreamPathTemplate": "/{entity}/{paymentAccountId}/byId/{operationId}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
-          "Host": "host-server",
-          "Port": 5307
+          "Host": "homebudget-accounting-api",
+          "Port": 80
         }
       ]
     },
     {
       "UpstreamPathTemplate": "/gateway/accounting/{service}",
-      "UpstreamHttpMethod": [ "GET" ],
+      "UpstreamHttpMethod": [
+        "GET"
+      ],
       "DownstreamPathTemplate": "/{service}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
-          "Host": "host-server",
-          "Port": 5307
+          "Host": "homebudget-accounting-api",
+          "Port": 80
         }
       ]
     },
     {
       "UpstreamPathTemplate": "/gateway/accounting/{entity}/{paymentAccountId}",
-      "UpstreamHttpMethod": [ "GET", "POST", "DELETE", "PATCH" ],
+      "UpstreamHttpMethod": [
+        "GET",
+        "POST",
+        "DELETE",
+        "PATCH"
+      ],
       "DownstreamPathTemplate": "/{entity}/{paymentAccountId}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
-          "Host": "host-server",
-          "Port": 5307
+          "Host": "homebudget-accounting-api",
+          "Port": 80
         }
       ]
     },
     {
       "UpstreamPathTemplate": "/gateway/{service}/byId/{id}",
-      "UpstreamHttpMethod": [ "GET" ],
+      "UpstreamHttpMethod": [
+        "GET"
+      ],
       "DownstreamPathTemplate": "/{service}/byId/{id}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
-          "Host": "host-server",
-          "Port": 5307
+          "Host": "homebudget-accounting-api",
+          "Port": 80
         }
       ]
     },
     {
       "UpstreamPathTemplate": "/gateway/{service}",
-      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "UpstreamHttpMethod": [
+        "GET",
+        "POST"
+      ],
       "DownstreamPathTemplate": "/{service}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
-          "Host": "host-server",
-          "Port": 5207
+          "Host": "homebudget-rates-api",
+          "Port": 80
         }
       ]
     }
