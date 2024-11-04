@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Security.Cryptography.X509Certificates;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -32,13 +33,17 @@ var builder = Host.CreateDefaultBuilder(args)
             var configuration = context.Configuration;
             var sslOptions = configuration.GetSection(nameof(SslOptions)).Get<SslOptions>();
 
+            serverOptions.ConfigureHttpsDefaults(httpsOptions =>
+            {
+                if (IsCertificateOptionsPopulated(sslOptions))
+                {
+                    httpsOptions.ServerCertificate = new X509Certificate2(sslOptions.CertificateName, sslOptions.Password);
+                }
+            });
+
             serverOptions.ListenAnyIP(sslOptions.Port, listenOptions =>
             {
-                if (string.IsNullOrWhiteSpace(sslOptions.CertificateName) || string.IsNullOrWhiteSpace(sslOptions.Password))
-                {
-                    throw new InvalidOperationException("HTTPS configuration is missing in appsettings.json");
-                }
-                else
+                if (IsCertificateOptionsPopulated(sslOptions))
                 {
                     listenOptions.UseHttps(sslOptions.CertificateName, sslOptions.Password);
                 }
@@ -47,3 +52,13 @@ var builder = Host.CreateDefaultBuilder(args)
     });
 
 await builder.Build().RunAsync();
+
+static bool IsCertificateOptionsPopulated(SslOptions sslOptions)
+{
+    if (string.IsNullOrWhiteSpace(sslOptions.CertificateName) || string.IsNullOrWhiteSpace(sslOptions.Password))
+    {
+        throw new InvalidOperationException("HTTPS configuration is missing in appsettings.json");
+    }
+
+    return true;
+}
