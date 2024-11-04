@@ -50,7 +50,7 @@ namespace HomeBudget.Backend.Gateway.Api.Tests
         public async Task Should_RedirectsRatesRequestCorrectlyAsync()
         {
             var upstreamUrl = new Uri("https://localhost:7298/gateway/currency-rates");
-            var targetRatesHost = new Uri("http://host-server:5207");
+            var targetRatesHost = new Uri("http://homebudget-rates-api");
 
             var response = await _client.GetAsync(upstreamUrl);
             var redirectUrl = response.Headers.Location?.ToString();
