@@ -23,7 +23,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
-    <PackageReference Include="Ocelot" Version="23.3.4" />
+    <PackageReference Include="Ocelot" Version="23.3.6" />
   </ItemGroup>
 
   <ItemGroup>
