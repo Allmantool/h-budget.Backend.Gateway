@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -7,6 +8,7 @@ using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
 
 using HomeBudget.Backend.Gateway.Middlewares;
+using HomeBudget.Backend.Gateway.Models;
 
 namespace HomeBudget.Backend.Gateway
 {
@@ -35,6 +37,14 @@ namespace HomeBudget.Backend.Gateway
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "API Gateway", Version = "v1" });
+            });
+
+            services.AddHttpsRedirection(options =>
+            {
+                var sslOptions = configuration.GetSection(nameof(SslOptions)).Get<SslOptions>();
+
+                options.RedirectStatusCode = StatusCodes.Status307TemporaryRedirect;
+                options.HttpsPort = sslOptions.Port;
             });
         }
 
