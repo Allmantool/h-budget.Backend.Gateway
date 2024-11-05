@@ -23,7 +23,6 @@ namespace HomeBudget.Backend.Gateway
             services.AddOcelot(Configuration);
 
             services.AddEndpointsApiExplorer();
-            services.AddSwaggerForOcelot(Configuration);
 
             services.AddCors(options =>
             {
@@ -32,11 +31,6 @@ namespace HomeBudget.Backend.Gateway
                     builder => builder.AllowAnyOrigin()
                         .AllowAnyMethod()
                         .AllowAnyHeader());
-            });
-
-            services.AddSwaggerGen(c =>
-            {
-                c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "API Gateway", Version = "v1" });
             });
 
             services.AddHttpsRedirection(options =>
@@ -56,20 +50,8 @@ namespace HomeBudget.Backend.Gateway
             }
 
             app.UseCors("CorsPolicy");
-
             app.UseHttpsRedirection();
-            app.UseSwagger();
-            app.UseSwaggerUI(c =>
-            {
-                c.SwaggerEndpoint("/swagger/v1/swagger.json", "API Gateway V1");
-                c.RoutePrefix = string.Empty;
-            });
-            app.UseSwaggerForOcelotUI(option =>
-            {
-                option.PathToSwaggerGenerator = "/swagger/docs";
-            });
             app.UseOcelot();
-
             app.UseMiddleware<OcelotLoggingMiddleware>();
         }
     }
