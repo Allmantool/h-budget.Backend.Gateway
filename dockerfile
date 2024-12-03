@@ -38,7 +38,9 @@ RUN export JAVA_HOME=/usr/lib/jvm/jdk-21.0.1
 RUN export PATH=$JAVA_HOME/bin:$PATH
 
 RUN dotnet new tool-manifest
-RUN dotnet tool install snitch --tool-path /tools --version 2.0.0
+
+# Not compatible with .net 9.0 (will be updated later)
+# RUN dotnet tool install snitch --tool-path /tools --version 2.0.0
 
 RUN dotnet tool restore
 
@@ -56,7 +58,8 @@ COPY . .
 
 RUN dotnet build HomeBudgetBackendGateway.sln -c Release --no-incremental --framework:net9.0 -maxcpucount:1 -o /app/build
 
-RUN /tools/snitch
+# Not compatible with .net 9.0 (will be updated later)
+# RUN /tools/snitch
 
 FROM build AS publish
 RUN dotnet publish HomeBudgetBackendGateway.sln \
