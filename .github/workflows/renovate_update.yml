@@ -1,0 +1,27 @@
+name: Renovate NuGet Updates
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    # The branches below must be a subset of the branches above
+    branches: [master]
+  schedule:
+    # * is a special character in YAML so you have to quote this string
+    - cron: "0 0 * * *"
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Renovate
+        run: npx renovate --autodiscover
+        env:
+          RENOVATE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RENOVATE_CONFIG_FILE: "./renovate.json"
+          LOG_LEVEL: debug
