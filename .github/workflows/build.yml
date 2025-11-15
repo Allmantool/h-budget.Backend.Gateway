@@ -22,11 +22,30 @@ env:
   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
 jobs:
-  build:
-    name: Setup & Build Solution
+  get-tag:
+    name: Get Latest Git Tag
     runs-on: ubuntu-latest
     outputs:
       target_tag: ${{ steps.last_tag.outputs.TARGET_TAG }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Enquire last git tag
+        id: last_tag
+        shell: bash
+        run: |
+          tag_v=$(git describe --tags $(git rev-list --tags --max-count=1))
+          tag=$(echo $tag_v | sed 's/v//')
+          echo "TARGET_TAG=${tag}" >> $GITHUB_OUTPUT
+
+  build:
+    name: Setup & Build Solution
+    runs-on: ubuntu-latest
+    needs: get-tag
+    outputs:
       cache-key: ${{ steps.cache-key.outputs.key }}
     defaults:
       run:
@@ -34,8 +53,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -48,17 +65,9 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
-      - name: Enquire last git tag
-        id: last_tag
-        shell: bash
-        run: |
-          tag_v=$(git describe --tags $(git rev-list --tags --max-count=1))
-          tag=$(echo $tag_v | sed 's/v//')
-          echo "TARGET_TAG=${tag}" >> $GITHUB_OUTPUT
-
       - name: Generate cache key
         id: cache-key
-        run: echo "key=dotnet-deps-${{ steps.last_tag.outputs.TARGET_TAG }}" >> $GITHUB_OUTPUT
+        run: echo "key=dotnet-deps-${{ needs.get-tag.outputs.target_tag }}" >> $GITHUB_OUTPUT
 
       - name: Restore .NET packages
         run: dotnet restore HomeBudgetBackendGateway.sln
@@ -124,8 +133,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Restore cached .NET and tools
         uses: actions/cache@v4
@@ -153,9 +160,7 @@ jobs:
 
       - name: Build solution for Sonar analysis
         shell: bash
-        run: |
-          # must build the same solution between sonar begin and sonar end
-          dotnet build HomeBudgetBackendGateway.sln --no-incremental
+        run: dotnet build HomeBudgetBackendGateway.sln --no-incremental
 
       - name: End Sonar scan
         env:
@@ -166,7 +171,7 @@ jobs:
   docker-publish:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    needs: ["build", "test"]
+    needs: ["build", "test", "get-tag"]
     defaults:
       run:
         working-directory: .
@@ -193,7 +198,7 @@ jobs:
 
       - name: Build Docker image
         env:
-          BUILD_VERSION: ${{ needs.build.outputs.target_tag }}
+          BUILD_VERSION: ${{ needs.get-tag.outputs.target_tag }}
         shell: bash
         run: |
           docker build \
@@ -203,7 +208,7 @@ jobs:
 
       - name: Push Docker image
         env:
-          BUILD_VERSION: ${{ needs.build.outputs.target_tag }}
+          BUILD_VERSION: ${{ needs.get-tag.outputs.target_tag }}
         shell: bash
         run: |
           docker push "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ env.BUILD_VERSION }}"
