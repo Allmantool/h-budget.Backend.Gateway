@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: false # Required for PAT-based push
 
       - name: Configure Git
         run: |
@@ -32,18 +32,23 @@ jobs:
           bump_each_commit: true
           version_from_branch: true
           debug: true
-
       - name: Tag Release & Push
         run: |
-          # Generate the new tag from semantic version output
           TAG=${{ steps.tag_version.outputs.version_tag }}
 
-          # Tag locally and push in one command using GitHub token
-          git tag $TAG
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} $TAG
+          # Ensure remote uses PAT
+          git remote set-url origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}
 
-          # Output tag to workflow logs
+          # Tag locally and push
+          git tag $TAG
+          git push origin $TAG
+
           echo "✅ Generated and pushed tag: $TAG"
 
-          # Optional: set as environment variable for downstream steps
+          # Expose tag for downstream jobs
           echo "TAG=$TAG" >> $GITHUB_ENV
+
+      - name: Show latest tag
+        run: |
+          TAG_LATEST=$(git describe --tags $(git rev-list --tags --max-count=1))
+          echo "🔹 Latest tag in repo: $TAG_LATEST"
