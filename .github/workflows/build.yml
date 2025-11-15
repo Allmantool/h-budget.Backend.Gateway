@@ -127,8 +127,7 @@ jobs:
             --no-build \
             --filter "Category!=IntegrationTests" \
             --logger "trx;LogFileName=unit-tests.trx" \
-            --results-directory ./test-results \
-            --parallel
+            --results-directory ./test-results
 
       - name: Upload unit test results
         uses: actions/upload-artifact@v5
