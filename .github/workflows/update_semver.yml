@@ -39,11 +39,9 @@ jobs:
         run: |
           TAG=${{ steps.tag_version.outputs.version_tag }}
 
-          # Tag locally
           git tag $TAG
 
-          # Push using PAT
-          git push https://${PAT_TOKEN}@github.com/${{ github.repository }}.git $TAG
+          git push https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }}.git $TAG
 
           echo "✅ Generated and pushed tag: $TAG"
           echo "TAG=$TAG" >> $GITHUB_ENV
