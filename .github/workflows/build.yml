@@ -5,9 +5,7 @@ on:
   push:
     branches:
       - master
-
     tags: ["v*.*.*"]
-
   pull_request:
     branches:
       - master
@@ -20,61 +18,36 @@ on:
     types: [opened, synchronize, reopened]
 
 env:
-  GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
-  SONAR_TOKEN: ${{secrets.SONAR_TOKEN}}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
 jobs:
-  build-currency-backend-gateway:
-    name: Backend gateway Quality Gate
+  # === Setup & Build Job ===
+  build:
+    name: Setup & Build Solution
     runs-on: ubuntu-latest
+    outputs:
+      target_tag: ${{ steps.last_tag.outputs.TARGET_TAG }}
+      cache-key: ${{ steps.cache-key.outputs.key }}
     defaults:
       run:
         working-directory: .
-
     steps:
-      - name: Set up JDK 21
-        uses: actions/setup-java@v3
-        with:
-          distribution: "temurin"
-          java-version: "21"
-
-      - name: Check out code
+      - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v3
         with:
           dotnet-version: "10.0.x"
 
-      - name: Cache SonarCloud packages
-        uses: actions/cache@v3
+      - name: Setup JDK 21
+        uses: actions/setup-java@v3
         with:
-          path: ~\sonar\cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-
-      - name: Cache SonarCloud scanner
-        id: cache-sonar-scanner
-        uses: actions/cache@v3
-        with:
-          path: .\.sonar\scanner
-          key: ${{ runner.os }}-sonar-scanner
-          restore-keys: ${{ runner.os }}-sonar-scanner
-
-      - name: Set up 'Find Current Pull Request'
-        uses: jwalton/gh-find-current-pr@v1
-        id: findPr
-        with:
-          # Can be "open", "closed", or "all".  Defaults to "open".
-          state: open
-
-      - name: Get pull request ID
-        run: echo "Your PR is ${PR}"
-        if: success() && steps.findPr.outputs.number
-        env:
-          PR: ${{ steps.findPr.outputs.pr }}
+          distribution: "temurin"
+          java-version: "21"
 
       - name: Enquire last git tag
         id: last_tag
@@ -82,41 +55,59 @@ jobs:
         run: |
           tag_v=$(git describe --tags $(git rev-list --tags --max-count=1))
           tag=$(echo $tag_v | sed 's/v//')
-
           echo "TARGET_TAG=${tag}" >> $GITHUB_OUTPUT
 
-      - name: Install external tools for quality gate verification
-        shell: bash
+      - name: Generate cache key
+        id: cache-key
+        run: echo "key=dotnet-deps-${{ steps.last_tag.outputs.TARGET_TAG }}" >> $GITHUB_OUTPUT
+
+      - name: Restore .NET packages
+        run: dotnet restore HomeBudgetBackendGateway.sln
+
+      - name: Install global tools
         run: |
           dotnet tool install --global JetBrains.dotCover.GlobalTool --version 2023.2.3
           dotnet tool install --global dotnet-sonarscanner --version 5.14.0
 
-      - name: Make the scanner script file executable
-        run: |
-          chmod +x ./startsonar.sh
-
-      - name: Start sonnar scanning
-        env:
-          GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          RUN_NUMBER: ${{ github.run_number }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          PULL_REQUEST_ID: ${{ steps.findPr.outputs.pr }}
-          PULL_REQUEST_SOURCE_BRANCH: ${{ github.ref }}
-          PULL_REQUEST_TARGET_BRANCH: refs/heads/master
-          ACTION: ${{ github.action }}
-          EVENT_NAME: ${{ github.event_name }}
+      - name: Build solution
         shell: bash
-        run: sh ./startsonar.sh
+        run: dotnet build HomeBudgetBackendGateway.sln --no-incremental
 
-      - name: Build the solution to quality metrics gathering
-        shell: bash
-        run: |
-          dotnet build HomeBudgetBackendGateway.sln \
-            --no-incremental
+      - name: Save dotnet and tool cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.dotnet
+            ~/.nuget/packages
+            ~/.dotnet/tools
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            dotnet-deps-
 
-      - name: Run test (unit + integrations based on test containers) for test coverage collecting
+  # === Test Job ===
+  test:
+    name: Run Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Restore cached .NET and tools
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.dotnet
+            ~/.nuget/packages
+            ~/.dotnet/tools
+          key: ${{ needs.build.outputs.cache-key }}
+          restore-keys: |
+            dotnet-deps-
+
+      - name: Run tests for coverage
         continue-on-error: true
         shell: bash
         run: |
@@ -125,21 +116,72 @@ jobs:
             --dcOutput="test-results/backend-gateway-coverage.html" \
             --dcFilters="+:HomeBudget.*;-:type=*.IntegrationTests;-:type=*.Tests"
 
-      - name: End sonnar scanning
+  # === Quality Gate Job ===
+  quality-gate:
+    name: Run SonarCloud Analysis
+    runs-on: ubuntu-latest
+    needs: build
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore cached .NET and tools
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.dotnet
+            ~/.nuget/packages
+            ~/.dotnet/tools
+          key: ${{ needs.build.outputs.cache-key }}
+          restore-keys: |
+            dotnet-deps-
+
+      - name: Make scanner script executable
+        run: chmod +x ./startsonar.sh
+
+      - name: Start Sonar scan
+        env:
+          GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: sh ./startsonar.sh
+
+      - name: End Sonar scan
         env:
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
         shell: bash
         run: dotnet-sonarscanner end /d:sonar.token="${{ env.SONAR_TOKEN }}"
 
-      - name: Build docker image
-        env:
-          BUILD_VERSION: ${{ steps.last_tag.outputs.TARGET_TAG }}
-        shell: bash
-        run: |
-          docker build \
-            --target 'final' \
-            -t "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ steps.last_tag.outputs.TARGET_TAG }}" \
-            .
+  # === Docker Publish Job ===
+  docker-publish:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: build
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Restore cached .NET and tools
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.dotnet
+            ~/.nuget/packages
+            ~/.dotnet/tools
+          key: ${{ needs.build.outputs.cache-key }}
+          restore-keys: |
+            dotnet-deps-
 
       - name: Login to Docker Hub
         uses: docker/login-action@v2
@@ -147,7 +189,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push docker image
+      - name: Build Docker image
+        env:
+          BUILD_VERSION: ${{ needs.build.outputs.target_tag }}
         shell: bash
         run: |
-          docker push "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ steps.last_tag.outputs.TARGET_TAG }}"
+          docker build \
+            --target 'final' \
+            -t "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ env.BUILD_VERSION }}" \
+            .
+
+      - name: Push Docker image
+        shell: bash
+        run: |
+          docker push "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ env.BUILD_VERSION }}"
