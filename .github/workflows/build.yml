@@ -101,6 +101,10 @@ jobs:
     defaults:
       run:
         working-directory: .
+    env:
+      DOTNET_ROOT: ~/.dotnet
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -116,14 +120,37 @@ jobs:
           restore-keys: |
             dotnet-deps-
 
-      - name: Run tests for coverage
-        continue-on-error: true
+      - name: Run unit tests
+        shell: bash
+        run: |
+          dotnet test HomeBudgetBackendGateway.sln \
+            --no-build \
+            --filter "Category!=IntegrationTests" \
+            --logger "trx;LogFileName=unit-tests.trx" \
+            --results-directory ./test-results \
+            --parallel
+
+      - name: Upload unit test results
+        uses: actions/upload-artifact@v5
+        with:
+          name: unit-test-results
+          path: ./test-results/unit-tests.trx
+
+      - name: Run coverage (dotCover)
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
           dotnet-dotcover test HomeBudgetBackendGateway.sln \
-            --dcReportType=HTML \
-            --dcOutput="test-results/backend-gateway-coverage.html" \
+            --dcReportType=XML \
+            --dcOutput="test-results/backend-gateway-coverage.xml" \
             --dcFilters="+:HomeBudget.*;-:type=*.IntegrationTests;-:type=*.Tests"
+
+      - name: Upload coverage report
+        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-report
+          path: ./test-results/backend-gateway-coverage.xml
 
   quality-gate:
     name: Run SonarCloud Analysis
