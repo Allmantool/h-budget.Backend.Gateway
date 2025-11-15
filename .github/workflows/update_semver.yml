@@ -32,20 +32,20 @@ jobs:
           bump_each_commit: true
           version_from_branch: true
           debug: true
+
       - name: Tag Release & Push
+        env:
+          PAT_TOKEN: secrets.PAT_TOKEN
         run: |
           TAG=${{ steps.tag_version.outputs.version_tag }}
 
-          # Ensure remote uses PAT
-          git remote set-url origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}
-
-          # Tag locally and push
+          # Tag locally
           git tag $TAG
-          git push origin $TAG
+
+          # Push using PAT
+          git push https://${{ env.PAT_TOKEN }}@github.com/${{ github.repository }}.git $TAG
 
           echo "✅ Generated and pushed tag: $TAG"
-
-          # Expose tag for downstream jobs
           echo "TAG=$TAG" >> $GITHUB_ENV
 
       - name: Show latest tag
