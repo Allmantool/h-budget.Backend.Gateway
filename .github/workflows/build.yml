@@ -202,6 +202,8 @@ jobs:
             .
 
       - name: Push Docker image
+        env:
+          BUILD_VERSION: ${{ needs.build.outputs.target_tag }}
         shell: bash
         run: |
           docker push "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ env.BUILD_VERSION }}"
