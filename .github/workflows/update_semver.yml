@@ -35,7 +35,7 @@ jobs:
 
       - name: Tag Release & Push
         env:
-          PAT_TOKEN: secrets.PAT_TOKEN
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           TAG=${{ steps.tag_version.outputs.version_tag }}
 
@@ -43,7 +43,7 @@ jobs:
           git tag $TAG
 
           # Push using PAT
-          git push https://${{ env.PAT_TOKEN }}@github.com/${{ github.repository }}.git $TAG
+          git push https://${PAT_TOKEN}@github.com/${{ github.repository }}.git $TAG
 
           echo "✅ Generated and pushed tag: $TAG"
           echo "TAG=$TAG" >> $GITHUB_ENV
