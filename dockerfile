@@ -9,6 +9,9 @@ EXPOSE 7298
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /scr
 
+# Ensure working directories are writable
+RUN mkdir -p /scr /app/publish && chmod -R 777 /scr /app/publish
+
 # Copy shared runtime files — same behavior as your original
 COPY --from=mcr.microsoft.com/dotnet/sdk:10.0 /usr/share/dotnet/shared /usr/share/dotnet/shared
 
@@ -45,8 +48,8 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 # === .NET tools ===
 RUN dotnet new tool-manifest
 
-# Snitch now compatible with .NET 10
-RUN dotnet tool install snitch --tool-path /tools --version 2.1.0
+# Use the latest available Snitch version (works with .NET 10)
+RUN dotnet tool install snitch --tool-path /tools --version 2.0.0
 RUN dotnet tool restore
 
 ENV PATH="$PATH:/root/.dotnet/tools:/tools"
@@ -78,10 +81,13 @@ RUN dotnet publish HomeBudgetBackendGateway.sln \
     --framework net10.0 \
     -c Release \
     -v Diagnostic \
-    -o /app/publish
+    -o /app/publish \
+    /p:StaticWebAssetsUseLegacyCache=false \
+    /p:StaticWebAssetsSkipManifestGeneration=false
 
 # === Final runtime image ===
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+
 ENTRYPOINT ["dotnet", "HomeBudget.Backend.Gateway.Api.dll"]
