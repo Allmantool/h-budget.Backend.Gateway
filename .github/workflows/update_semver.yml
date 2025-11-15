@@ -1,4 +1,5 @@
 name: Update Semver
+
 on:
   pull_request:
     types: [closed]
@@ -14,7 +15,8 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # Need full history for semantic versioning
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Configure Git
         run: |
@@ -31,14 +33,17 @@ jobs:
           version_from_branch: true
           debug: true
 
-      - name: Tag Release (vX.Y.Z)
+      - name: Tag Release & Push
         run: |
-          echo "Tagging release: ${{ steps.tag_version.outputs.version_tag }}"
-          git tag ${{ steps.tag_version.outputs.version_tag }}
-          git push origin ${{ steps.tag_version.outputs.version_tag }}
+          # Generate the new tag from semantic version output
+          TAG=${{ steps.tag_version.outputs.version_tag }}
 
-      - name: Show generated tag
-        run: |
-          tag_v=$(git describe --tags $(git rev-list --tags --max-count=1))
-          tag=$(echo $tag_v | sed 's/v//')
-          echo "Generated tag: ${tag}"
+          # Tag locally and push in one command using GitHub token
+          git tag $TAG
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} $TAG
+
+          # Output tag to workflow logs
+          echo "✅ Generated and pushed tag: $TAG"
+
+          # Optional: set as environment variable for downstream steps
+          echo "TAG=$TAG" >> $GITHUB_ENV
