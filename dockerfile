@@ -46,7 +46,7 @@ ENV PATH="${JAVA_HOME}/bin:${PATH}"
 RUN dotnet new tool-manifest
 
 # Snitch now compatible with .NET 10
-RUN dotnet tool install snitch --tool-path /tools --version 2.1.0
+RUN dotnet tool install snitch --tool-path /tools --version 2.0.0
 RUN dotnet tool restore
 
 ENV PATH="$PATH:/root/.dotnet/tools:/tools"
@@ -84,4 +84,5 @@ RUN dotnet publish HomeBudgetBackendGateway.sln \
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+
 ENTRYPOINT ["dotnet", "HomeBudget.Backend.Gateway.Api.dll"]
