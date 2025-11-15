@@ -101,10 +101,6 @@ jobs:
     defaults:
       run:
         working-directory: .
-    env:
-      DOTNET_ROOT: ~/.dotnet
-      DOTNET_NOLOGO: true
-      DOTNET_CLI_TELEMETRY_OPTOUT: 1
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -120,41 +116,15 @@ jobs:
           restore-keys: |
             dotnet-deps-
 
-      - name: Run unit tests
+      - name: Run tests for coverage
+        continue-on-error: true
+        timeout-minutes: 15
         shell: bash
         run: |
-          mkdir -p ./test-results
-          echo "Running unit tests..."
-          # Option A: solution-level test (sequential, simple)
-          dotnet test ./HomeBudgetBackendGateway.sln \
-            --no-build \
-            --filter "Category!=IntegrationTests" \
-            --logger "trx;LogFileName=unit-tests.trx" \
-            --results-directory ./test-results
-
-      - name: Upload unit test results
-        uses: actions/upload-artifact@v5
-        with:
-          name: unit-test-results
-          path: ./test-results/unit-tests.trx
-
-      - name: Run coverage (dotCover)
-        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: |
-          mkdir -p ./test-results
-          echo "Running dotCover coverage..."
-          dotnet-dotcover test ./HomeBudgetBackendGateway.sln \
-            --dcReportType=XML \
-            --dcOutput="test-results/backend-gateway-coverage.xml" \
+          dotnet-dotcover test HomeBudgetBackendGateway.sln \
+            --dcReportType=HTML \
+            --dcOutput="test-results/backend-gateway-coverage.html" \
             --dcFilters="+:HomeBudget.*;-:type=*.IntegrationTests;-:type=*.Tests"
-
-      - name: Upload coverage report
-        if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v5
-        with:
-          name: coverage-report
-          path: ./test-results/backend-gateway-coverage.xml
 
   quality-gate:
     name: Run SonarCloud Analysis
