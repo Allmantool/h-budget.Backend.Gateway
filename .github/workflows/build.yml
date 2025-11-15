@@ -3,8 +3,6 @@ name: Build
 on:
   workflow_dispatch:
   push:
-    branches:
-      - master
     tags: ["v*.*.*"]
   pull_request:
     branches:
@@ -192,6 +190,7 @@ jobs:
       name: production
       url: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/homebudget-backend-gateway
     needs: [build, test, get-tag]
+    if: startsWith(github.ref, 'refs/tags/v')
     defaults:
       run:
         working-directory: .
