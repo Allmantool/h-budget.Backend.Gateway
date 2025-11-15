@@ -1,30 +1,20 @@
 name: Update Semver
-
 on:
-  push:
-    branches:
-      - master
-      - develop
-      - feature/*
-      - test/*
-      - hotfix/*
-      - fix/*
-      - tech/*
-    tags:
-      - "v*"
-
   pull_request:
     types: [closed]
+    branches:
+      - master
 
 jobs:
   update-semver_if_merged:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out code
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Need full history for semantic versioning
 
       - name: Configure Git
         run: |
@@ -43,6 +33,7 @@ jobs:
 
       - name: Tag Release (vX.Y.Z)
         run: |
+          echo "Tagging release: ${{ steps.tag_version.outputs.version_tag }}"
           git tag ${{ steps.tag_version.outputs.version_tag }}
           git push origin ${{ steps.tag_version.outputs.version_tag }}
 
