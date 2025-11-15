@@ -173,7 +173,7 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
           COVERAGE_FILE: test-results/backend-gateway-coverage.xml
         shell: bash
-        run: sh ./startsonar.sh
+        run: ./startsonar.sh
 
       - name: Build solution for Sonar analysis
         shell: bash

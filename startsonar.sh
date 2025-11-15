@@ -1,13 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# path to coverage file (relative to repository root)
+# Path to coverage file (relative to repository root)
 COVERAGE_FILE="${COVERAGE_FILE:-test-results/backend-gateway-coverage.xml}"
 
-if [ -n "${PULL_REQUEST_ID:-}" ]; then
+# Determine if we are running in a pull request context
+if [[ -n "${PULL_REQUEST_ID:-}" ]]; then
     echo "Running Sonar begin for Pull Request ${PULL_REQUEST_ID}"
 
-    if [ -f "$COVERAGE_FILE" ]; then
+    if [[ -f "$COVERAGE_FILE" ]]; then
         COVERAGE_PARAM="/d:sonar.cs.dotcover.reportsPaths=\"$COVERAGE_FILE\""
         echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
     else
@@ -31,11 +32,16 @@ if [ -n "${PULL_REQUEST_ID:-}" ]; then
         /d:sonar.pullrequest.github.repository="Allmantool/h-budget.Backend.Gateway" \
         /d:sonar.pullrequest.github.endpoint="https://api.github.com/"
 else
-    if [[ "${PULL_REQUEST_SOURCE_BRANCH:-}" =~ "master" ]] ;then
-        PULL_REQUEST_SOURCE_BRANCH=""
+    # For non-PR branches
+    BRANCH_NAME="${GITHUB_REF_NAME:-master}"
+
+    if [[ "$BRANCH_NAME" == "master" ]]; then
+        SONAR_BRANCH_PARAM="/d:sonar.branch.name=master"
+    else
+        SONAR_BRANCH_PARAM="/d:sonar.branch.name=$BRANCH_NAME"
     fi
 
-    if [ -f "$COVERAGE_FILE" ]; then
+    if [[ -f "$COVERAGE_FILE" ]]; then
         COVERAGE_PARAM="/d:sonar.cs.dotcover.reportsPaths=\"$COVERAGE_FILE\""
         echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
     else
@@ -48,9 +54,9 @@ else
         /o:"allmantool" \
         /n:"h-budget-backend-gateway" \
         /v:"${GITHUB_RUN_ID}" \
-        /d:sonar.branch.name="master" \
+        $SONAR_BRANCH_PARAM \
         /d:sonar.token="${SONAR_TOKEN}" \
         /d:sonar.host.url="https://sonarcloud.io" \
         ${COVERAGE_PARAM} \
-        /d:sonar.coverage.exclusions="Test[s]/**/*"
+        /d:sonar.coverage.exclusions="**/Test[s]/**/*"
 fi
