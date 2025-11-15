@@ -22,7 +22,6 @@ env:
   SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
 jobs:
-  # === Setup & Build Job ===
   build:
     name: Setup & Build Solution
     runs-on: ubuntu-latest
@@ -34,17 +33,17 @@ jobs:
         working-directory: .
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
       - name: Setup JDK 21
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "21"
@@ -74,7 +73,7 @@ jobs:
         run: dotnet build HomeBudgetBackendGateway.sln --no-incremental
 
       - name: Save dotnet and tool cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.dotnet
@@ -84,7 +83,6 @@ jobs:
           restore-keys: |
             dotnet-deps-
 
-  # === Test Job ===
   test:
     name: Run Unit & Integration Tests
     runs-on: ubuntu-latest
@@ -94,10 +92,10 @@ jobs:
         working-directory: .
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: Restore cached .NET and tools
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.dotnet
@@ -116,7 +114,6 @@ jobs:
             --dcOutput="test-results/backend-gateway-coverage.html" \
             --dcFilters="+:HomeBudget.*;-:type=*.IntegrationTests;-:type=*.Tests"
 
-  # === Quality Gate Job ===
   quality-gate:
     name: Run SonarCloud Analysis
     runs-on: ubuntu-latest
@@ -126,12 +123,12 @@ jobs:
         working-directory: .
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Restore cached .NET and tools
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.dotnet
@@ -144,7 +141,7 @@ jobs:
       - name: Make scanner script executable
         run: chmod +x ./startsonar.sh
 
-      - name: Start Sonar scan
+      - name: Start Sonar scan (begin)
         env:
           GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
@@ -154,13 +151,18 @@ jobs:
         shell: bash
         run: sh ./startsonar.sh
 
+      - name: Build solution for Sonar analysis
+        shell: bash
+        run: |
+          # must build the same solution between sonar begin and sonar end
+          dotnet build HomeBudgetBackendGateway.sln --no-incremental
+
       - name: End Sonar scan
         env:
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
         shell: bash
         run: dotnet-sonarscanner end /d:sonar.token="${{ env.SONAR_TOKEN }}"
 
-  # === Docker Publish Job ===
   docker-publish:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
@@ -170,10 +172,10 @@ jobs:
         working-directory: .
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: Restore cached .NET and tools
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.dotnet
