@@ -123,7 +123,10 @@ jobs:
       - name: Run unit tests
         shell: bash
         run: |
-          dotnet test HomeBudgetBackendGateway.sln \
+          mkdir -p ./test-results
+          echo "Running unit tests..."
+          # Option A: solution-level test (sequential, simple)
+          dotnet test ./HomeBudgetBackendGateway.sln \
             --no-build \
             --filter "Category!=IntegrationTests" \
             --logger "trx;LogFileName=unit-tests.trx" \
@@ -139,7 +142,9 @@ jobs:
         if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
-          dotnet-dotcover test HomeBudgetBackendGateway.sln \
+          mkdir -p ./test-results
+          echo "Running dotCover coverage..."
+          dotnet-dotcover test ./HomeBudgetBackendGateway.sln \
             --dcReportType=XML \
             --dcOutput="test-results/backend-gateway-coverage.xml" \
             --dcFilters="+:HomeBudget.*;-:type=*.IntegrationTests;-:type=*.Tests"
