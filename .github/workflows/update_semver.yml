@@ -35,7 +35,7 @@ jobs:
 
       - name: Tag Release & Push
         env:
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          PAT_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           TAG=${{ steps.tag_version.outputs.version_tag }}
 
