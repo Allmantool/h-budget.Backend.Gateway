@@ -51,12 +51,14 @@ RUN dotnet build HomeBudgetBackendGateway.sln \
 # === Run Snitch analysis ===
 RUN /tools/snitch
 
-RUN dotnet publish HomeBudgetBackendGateway.sln \
+RUN dotnet publish "HomeBudgetBackendGateway.sln" \
+    --no-dependencies \
+    --no-restore \
+    /maxcpucount:1 \
+    --framework net10.0 \
     -c Release \
-    -f net10.0 \
-    -o /app/publish \
-    /p:StaticWebAssetsUseLegacyCache=false \
-    /p:StaticWebAssetsSkipManifestGeneration=false
+    -v Diagnostic \
+    -o /app/publish
 
 FROM base AS final
 WORKDIR /app
