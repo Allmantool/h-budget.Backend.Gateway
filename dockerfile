@@ -8,6 +8,8 @@ WORKDIR /src
 ARG BUILD_VERSION
 ENV BUILD_VERSION=${BUILD_VERSION}
 
+COPY Directory.Build.props ./
+COPY Directory.Packages.props ./
 COPY HomeBudgetBackendGateway.sln ./
 COPY HomeBudget.Core/*.csproj HomeBudget.Core/
 COPY HomeBudget.Backend.Gateway/*.csproj HomeBudget.Backend.Gateway/
