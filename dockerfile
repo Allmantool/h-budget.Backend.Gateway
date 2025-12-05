@@ -1,93 +1,62 @@
-# === Base runtime image (.NET 10 ASP.NET) ===
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
-EXPOSE 80
-EXPOSE 443
-EXPOSE 7298
+EXPOSE 80 443 7298
 
-# === Build stage (.NET 10 SDK) ===
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-WORKDIR /scr
+WORKDIR /src
 
-# Ensure working directories are writable
-RUN mkdir -p /scr /app/publish && chmod -R 777 /scr /app/publish
-
-# Copy shared runtime files — same behavior as your original
-COPY --from=mcr.microsoft.com/dotnet/sdk:10.0 /usr/share/dotnet/shared /usr/share/dotnet/shared
-
-# === Build arguments ===
 ARG BUILD_VERSION
 ENV BUILD_VERSION=${BUILD_VERSION}
 
-# === Install dependencies (cached) ===
+COPY HomeBudgetBackendGateway.sln ./
+COPY HomeBudget.Core/*.csproj HomeBudget.Core/
+COPY HomeBudget.Backend.Gateway/*.csproj HomeBudget.Backend.Gateway/
+
+RUN dotnet restore
+
+# === Install system dependencies + Java 21 ===
 RUN --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
-    apt-get install -y --quiet --no-install-recommends \
-    apt-transport-https && \
-    apt-get -y autoremove && \
-    apt-get clean autoclean
+    apt-get install -y --no-install-recommends wget ant ca-certificates-java && \
+    apt-get clean autoclean && \
+    rm -rf /var/lib/apt/lists/*
 
-# === Install Java 21 ===
-RUN wget https://download.oracle.com/java/21/latest/jdk-21_linux-x64_bin.tar.gz -O jdk-21_linux-x64_bin.tar.gz
-RUN mkdir -p /usr/lib/jvm && \
-    tar -xvf jdk-21_linux-x64_bin.tar.gz -C /usr/lib/jvm
-
-RUN --mount=type=cache,target=/var/cache/apt \
-    apt-get update && \
-    apt-get install -f -y --quiet --no-install-recommends \
-    ant ca-certificates-java && \
-    apt-get -y autoremove && \
-    apt-get clean autoclean
-
-# === Fix certs ===
-RUN update-ca-certificates -f
+# Download & extract Java 21
+RUN wget https://download.oracle.com/java/21/latest/jdk-21_linux-x64_bin.tar.gz -O /tmp/jdk-21_linux-x64_bin.tar.gz && \
+    mkdir -p /usr/lib/jvm && \
+    tar -xzf /tmp/jdk-21_linux-x64_bin.tar.gz -C /usr/lib/jvm && \
+    rm /tmp/jdk-21_linux-x64_bin.tar.gz
 
 ENV JAVA_HOME=/usr/lib/jvm/jdk-21.0.1
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
-# === .NET tools ===
+# === Install Snitch tool ===
 RUN dotnet new tool-manifest
-
-# Use the latest available Snitch version (works with .NET 10)
 RUN dotnet tool install snitch --tool-path /tools --version 2.0.0
-RUN dotnet tool restore
-
 ENV PATH="$PATH:/root/.dotnet/tools:/tools"
-
-# === Copy projects ===
-COPY ["HomeBudget.Core/*.csproj",                 "HomeBudget.Core/"]
-COPY ["HomeBudget.Backend.Gateway/*.csproj",      "HomeBudget.Backend.Gateway.Api/"]
-COPY ["HomeBudgetBackendGateway.sln",             "HomeBudgetBackendGateway.sln"]
-COPY ["startsonar.sh",                            "startsonar.sh"]
 
 COPY . .
 
-# === Build solution ===
 RUN dotnet build HomeBudgetBackendGateway.sln \
     -c Release \
-    --no-incremental \
-    --framework net10.0 \
-    -maxcpucount:1 \
-    -o /app/build
+    -f net10.0 \
+    -o /app/build \
+    /maxcpucount:1 \
+    --no-incremental
 
-# === Snitch analysis ===
+# === Run Snitch analysis ===
 RUN /tools/snitch
 
-# === Publish ===
-FROM build AS publish
 RUN dotnet publish HomeBudgetBackendGateway.sln \
-    --no-dependencies \
-    --no-restore \
-    --framework net10.0 \
     -c Release \
-    -v Diagnostic \
+    -f net10.0 \
     -o /app/publish \
     /p:StaticWebAssetsUseLegacyCache=false \
     /p:StaticWebAssetsSkipManifestGeneration=false
 
-# === Final runtime image ===
 FROM base AS final
 WORKDIR /app
-COPY --from=publish /app/publish .
 
-ENTRYPOINT ["dotnet", "HomeBudget.Backend.Gateway.Api.dll"]
+COPY --from=build /app/publish .
+
+ENTRYPOINT ["dotnet", "HomeBudget.Backend.Gateway.dll"]
