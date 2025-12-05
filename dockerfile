@@ -11,8 +11,10 @@ ENV BUILD_VERSION=${BUILD_VERSION}
 COPY HomeBudgetBackendGateway.sln ./
 COPY HomeBudget.Core/*.csproj HomeBudget.Core/
 COPY HomeBudget.Backend.Gateway/*.csproj HomeBudget.Backend.Gateway/
+COPY HomeBudget.Backend.Gateway.Api.Tests/*.csproj HomeBudget.Backend.Gateway.Api.Tests/
 
-RUN dotnet restore
+# Restore dependencies
+RUN dotnet restore HomeBudgetBackendGateway.sln
 
 # === Install system dependencies + Java 21 ===
 RUN --mount=type=cache,target=/var/cache/apt \
