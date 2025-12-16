@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using System;
+
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -7,8 +9,11 @@ using Microsoft.Extensions.Hosting;
 using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
 
+using HomeBudget.Backend.Gateway.Configuration;
+using HomeBudget.Backend.Gateway.Constants;
 using HomeBudget.Backend.Gateway.Middlewares;
 using HomeBudget.Backend.Gateway.Models;
+using HomeBudget.Core.Options;
 
 namespace HomeBudget.Backend.Gateway
 {
@@ -22,7 +27,15 @@ namespace HomeBudget.Backend.Gateway
 
             services.AddOcelot(Configuration);
 
-            services.AddEndpointsApiExplorer();
+            services.AddEndpointsApiExplorer()
+                .SetUpHealthCheck(configuration, Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))
+                .AddResponseCaching();
+
+            services.AddHeaderPropagation(options =>
+            {
+                options.Headers.Add(HttpHeaderKeys.HostService, HostServiceOptions.Gateway);
+                options.Headers.Add(HttpHeaderKeys.CorrelationId);
+            });
 
             services.AddCors(options =>
             {

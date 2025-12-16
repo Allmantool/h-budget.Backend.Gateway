@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 using HomeBudget.Backend.Gateway;
 using HomeBudget.Backend.Gateway.Models;
 
-var builder = Host.CreateDefaultBuilder(args)
+var hostBuilder = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((hostingContext, config) =>
     {
         var environment = hostingContext.HostingEnvironment.EnvironmentName;
@@ -21,7 +21,7 @@ var builder = Host.CreateDefaultBuilder(args)
             .AddJsonFile($"ocelot.{environment}.json", optional: true, reloadOnChange: true)
             .AddEnvironmentVariables();
 
-        if (string.Equals(environment, "Development"))
+        if (string.Equals(environment, "Development", StringComparison.Ordinal))
         {
             config.AddJsonFile("appsettings.Local.json", true, true);
         }
@@ -51,7 +51,19 @@ var builder = Host.CreateDefaultBuilder(args)
         });
     });
 
-await builder.Build().RunAsync();
+var builder = hostBuilder.Build();
+
+var services = builder.Services;
+
+try
+{
+    await builder.RunAsync();
+}
+catch (Exception ex)
+{
+    // builder.Logger.LogError($"Fatal error: {ex}");
+    Environment.Exit(1);
+}
 
 static bool IsCertificateOptionsPopulated(SslOptions sslOptions)
 {
