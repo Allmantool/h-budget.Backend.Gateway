@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.17.0.131074" />
+    <PackageVersion Include="IdentityModel" Version="5.2.0" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="FluentAssertions" Version="8.8.0" />
     <PackageVersion Include="KubernetesClient" Version="18.0.13" />
