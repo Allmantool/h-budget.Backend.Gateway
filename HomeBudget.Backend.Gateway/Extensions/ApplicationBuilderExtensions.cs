@@ -1,13 +1,13 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Serilog.Events;
 
 using HomeBudget.Backend.Gateway.Configuration;
 using HomeBudget.Backend.Gateway.Constants;
 using HomeBudget.Backend.Gateway.Middlewares;
+using HomeBudget.Core.Constants;
 
 namespace HomeBudget.Backend.Gateway.Extensions
 {
@@ -15,7 +15,6 @@ namespace HomeBudget.Backend.Gateway.Extensions
     {
         public static IApplicationBuilder SetUpBaseApplication(
             this IApplicationBuilder app,
-            IServiceCollection services,
             IWebHostEnvironment env,
             IConfiguration configuration)
         {
@@ -27,7 +26,7 @@ namespace HomeBudget.Backend.Gateway.Extensions
 
                 app.UseCors(corsPolicyBuilder =>
                 {
-                    var allowedUiOrigins = configuration.GetSection("UiOriginsUrl").Get<string[]>();
+                    var allowedUiOrigins = configuration.GetSection(ConfigurationSectionKeys.UiHost).Get<string[]>();
 
                     Log.Information("UI origin is '{0}'", string.Join(" ,", allowedUiOrigins));
 
@@ -49,13 +48,10 @@ namespace HomeBudget.Backend.Gateway.Extensions
                 .UseRouting()
                 .UseSerilogRequestLogging(options =>
                 {
-                    // Customize the message template
                     options.MessageTemplate = "Handled {RequestPath}";
 
-                    // Emit debug-level events instead of the defaults
                     options.GetLevel = (_, _, _) => LogEventLevel.Debug;
 
-                    // Attach additional properties to the request completion event
                     options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
                     {
                         diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
@@ -63,7 +59,10 @@ namespace HomeBudget.Backend.Gateway.Extensions
                     };
                 })
                 .SetUpHealthCheckEndpoints(env)
-                .UseEndpoints(endpoints => { endpoints.MapControllers(); });
+                .UseEndpoints(endpoints =>
+                {
+                    endpoints.MapControllers();
+                });
         }
     }
 }

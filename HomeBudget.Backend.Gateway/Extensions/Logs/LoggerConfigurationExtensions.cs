@@ -24,9 +24,16 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
         {
             try
             {
-                var seqOptions = configuration.GetSection(ConfigurationSectionKeys.SeqOptions)?.Get<SeqOptions>();
+                var seqSection = configuration.GetSection(ConfigurationSectionKeys.SeqOptions);
 
-                if (!seqOptions.IsEnabled)
+                if (seqSection is null)
+                {
+                    return loggerConfiguration;
+                }
+
+                var seqOptions = configuration.GetSection(ConfigurationSectionKeys.SeqOptions).Get<SeqOptions>();
+
+                if (seqOptions is null || !seqOptions.IsEnabled)
                 {
                     return loggerConfiguration;
                 }
@@ -51,9 +58,16 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
         {
             try
             {
+                var elasticSection = configuration.GetSection(ConfigurationSectionKeys.ElasticSearchOptions);
+
+                if (elasticSection is null)
+                {
+                    return loggerConfiguration;
+                }
+
                 var elasticOptions = configuration.GetSection(ConfigurationSectionKeys.ElasticSearchOptions)?.Get<ElasticSearchOptions>();
 
-                if (!elasticOptions.IsEnabled)
+                if (elasticOptions is null || !elasticOptions.IsEnabled)
                 {
                     return loggerConfiguration;
                 }
