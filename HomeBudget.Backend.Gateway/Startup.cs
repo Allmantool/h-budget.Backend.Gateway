@@ -11,24 +11,27 @@ using Ocelot.Middleware;
 
 using HomeBudget.Backend.Gateway.Configuration;
 using HomeBudget.Backend.Gateway.Constants;
+using HomeBudget.Backend.Gateway.Extensions;
+using HomeBudget.Backend.Gateway.Extensions.OpenTelemetry;
 using HomeBudget.Backend.Gateway.Middlewares;
 using HomeBudget.Backend.Gateway.Models;
 using HomeBudget.Core.Options;
 
 namespace HomeBudget.Backend.Gateway
 {
-    public class Startup(IConfiguration configuration)
+    public class Startup(IConfiguration configuration, IWebHostEnvironment hostEnvironment)
     {
-        private IConfiguration Configuration { get; } = configuration;
+        public IConfiguration HostConfiguration { get; } = configuration;
+        public IWebHostEnvironment HostEnvironment { get; } = hostEnvironment;
 
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddControllers();
 
-            services.AddOcelot(Configuration);
+            services.AddOcelot(HostConfiguration);
 
             services.AddEndpointsApiExplorer()
-                .SetUpHealthCheck(configuration, Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))
+                .SetUpHealthCheck(configuration, Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? Endpoints.HealthCheckSource)
                 .AddResponseCaching();
 
             services.AddHeaderPropagation(options =>
@@ -36,6 +39,8 @@ namespace HomeBudget.Backend.Gateway
                 options.Headers.Add(HttpHeaderKeys.HostService, HostServiceOptions.Gateway);
                 options.Headers.Add(HttpHeaderKeys.CorrelationId);
             });
+
+            services.InitializeOpenTelemetry(HostEnvironment);
 
             services.AddCors(options =>
             {
@@ -46,13 +51,16 @@ namespace HomeBudget.Backend.Gateway
                         .AllowAnyHeader());
             });
 
-            services.AddHttpsRedirection(options =>
+            if (!hostEnvironment.IsDevelopment())
             {
-                var sslOptions = configuration.GetSection(nameof(SslOptions)).Get<SslOptions>();
+                services.AddHttpsRedirection(options =>
+                {
+                    var sslOptions = configuration.GetSection(nameof(SslOptions)).Get<SslOptions>();
 
-                options.RedirectStatusCode = StatusCodes.Status307TemporaryRedirect;
-                options.HttpsPort = sslOptions.Port;
-            });
+                    options.RedirectStatusCode = StatusCodes.Status307TemporaryRedirect;
+                    options.HttpsPort = sslOptions.Port;
+                });
+            }
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -62,10 +70,29 @@ namespace HomeBudget.Backend.Gateway
                 app.UseDeveloperExceptionPage();
             }
 
-            app.UseCors("CorsPolicy");
-            app.UseHttpsRedirection();
-            app.UseOcelot();
+            app.SetUpBaseApplication(env, configuration);
+            app.SetupOpenTelemetry();
             app.UseMiddleware<OcelotLoggingMiddleware>();
+            app.UseOcelot();
+
+            app.Use(async (context, next) =>
+            {
+                var requestPath = context.Request.Path;
+
+                if (string.IsNullOrWhiteSpace(requestPath))
+                {
+                    await next();
+                }
+
+                if (requestPath.StartsWithSegments(Endpoints.HealthCheckSource) ||
+                    requestPath.StartsWithSegments(Endpoints.HealthCheckUIApiPath))
+                {
+                    await next();
+                    return;
+                }
+
+                await next();
+            });
         }
     }
 }

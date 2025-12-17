@@ -11,6 +11,7 @@ using Sentry.Infrastructure;
 using Serilog;
 using Serilog.Configuration;
 using Serilog.Events;
+
 using HomeBudget.Core.Options;
 
 namespace HomeBudget.Backend.Gateway.Extensions
@@ -20,7 +21,7 @@ namespace HomeBudget.Backend.Gateway.Extensions
         public static LoggerConfiguration AddAndConfigureSentry(
             this LoggerSinkConfiguration loggerConfiguration,
             IConfiguration configuration,
-            IWebHostEnvironment environment)
+            IHostEnvironment environment)
         {
             return AddAndConfigureSentry(
                 loggerConfiguration,
@@ -32,7 +33,7 @@ namespace HomeBudget.Backend.Gateway.Extensions
         public static LoggerConfiguration AddAndConfigureSentry(
             this LoggerSinkConfiguration loggerConfiguration,
             IConfiguration configuration,
-            IWebHostEnvironment environment,
+            IHostEnvironment environment,
             SentryConfigurationOptions sentryOptions)
         {
             return loggerConfiguration.Sentry(sentrySerilogOptions =>

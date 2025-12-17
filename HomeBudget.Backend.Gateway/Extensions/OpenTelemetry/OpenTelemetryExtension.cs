@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+
 using HomeBudget.Core.Options;
 
 namespace HomeBudget.Backend.Gateway.Extensions.OpenTelemetry
@@ -37,7 +38,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.OpenTelemetry
             return services;
         }
 
-        public static WebApplication SetupOpenTelemetry(this WebApplication app)
+        public static IApplicationBuilder SetupOpenTelemetry(this IApplicationBuilder app)
         {
             app.UseOpenTelemetryPrometheusScrapingEndpoint();
 
