@@ -1,8 +1,10 @@
-﻿using HomeBudget.Backend.Gateway.Constants;
-using Microsoft.AspNetCore.Http;
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
+
+using Microsoft.AspNetCore.Http;
+
+using HomeBudget.Backend.Gateway.Constants;
 
 namespace HomeBudget.Backend.Gateway.Middlewares
 {
