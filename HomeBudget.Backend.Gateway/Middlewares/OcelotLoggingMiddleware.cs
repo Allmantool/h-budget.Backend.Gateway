@@ -8,7 +8,7 @@ using Ocelot.Middleware;
 
 namespace HomeBudget.Backend.Gateway.Middlewares
 {
-    public class OcelotLoggingMiddleware(RequestDelegate next)
+    internal class OcelotLoggingMiddleware(RequestDelegate next)
     {
         public async Task InvokeAsync(HttpContext context)
         {

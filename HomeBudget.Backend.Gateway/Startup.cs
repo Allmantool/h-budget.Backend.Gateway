@@ -2,6 +2,7 @@
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -48,6 +49,16 @@ namespace HomeBudget.Backend.Gateway
                         .AllowAnyMethod()
                         .AllowAnyHeader());
             });
+
+            services.Configure<ForwardedHeadersOptions>(options =>
+            {
+                options.ForwardedHeaders =
+                    ForwardedHeaders.XForwardedFor |
+                    ForwardedHeaders.XForwardedProto;
+
+                options.KnownIPNetworks.Clear();
+                options.KnownProxies.Clear();
+            });
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -56,32 +67,22 @@ namespace HomeBudget.Backend.Gateway
             {
                 app.UseDeveloperExceptionPage();
             }
+            else
+            {
+                app.UseHsts();
+            }
 
             app.SetUpBaseApplication(env, configuration);
             app.SetupOpenTelemetry();
+
+            app.UseForwardedHeaders();
+            app.UseMiddleware<HttpsEnforcementMiddleware>();
+
+            app.UseCors("CorsPolicy");
             app.UseMiddleware<OcelotLoggingMiddleware>();
-            app.UseOcelot();
 
-            app.Use(async (context, next) =>
-            {
-                var requestPath = context.Request.Path;
-
-                if (string.IsNullOrWhiteSpace(requestPath))
-                {
-                    await next();
-                }
-
-                if (requestPath.StartsWithSegments(Endpoints.HealthCheckSource) ||
-                    requestPath.StartsWithSegments(Endpoints.HealthCheckUIApiPath) ||
-                    requestPath.StartsWithSegments(Endpoints.Metrics))
-                {
-                    await next();
-                    return;
-                }
-
-                var httpsUrl = $"https://{context.Request.Host}{context.Request.Path}{context.Request.QueryString}";
-                context.Response.Redirect(httpsUrl, permanent: false);
-            });
+            // Official Ocelot guidance
+            app.UseOcelot().GetAwaiter().GetResult();
         }
     }
 }
