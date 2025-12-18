@@ -5,5 +5,6 @@
         public const string HealthCheckSource = "/health";
         public const string HealthCheckUIApiPath = "/health-ui-api";
         public const string HealthCheckUIPath = "/show-health-ui";
+        public const string Metrics = "/metrics";
     }
 }

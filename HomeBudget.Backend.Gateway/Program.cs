@@ -54,7 +54,14 @@ hostBuilder
         {
             var configuration = context.Configuration;
             var hostEnvironment = context.HostingEnvironment;
-            var sslOptions = configuration.GetSection(nameof(SslOptions)).Get<SslOptions>();
+            var sslOptions = configuration.GetSection(nameof(SslOptions))?.Get<SslOptions>();
+
+            if (sslOptions is null)
+            {
+                return;
+            }
+
+            serverOptions.ListenAnyIP(sslOptions.HttpPort);
 
             if (hostEnvironment.IsDevelopment())
             {
@@ -69,7 +76,7 @@ hostBuilder
                 }
             });
 
-            serverOptions.ListenAnyIP(sslOptions.Port, listenOptions =>
+            serverOptions.ListenAnyIP(sslOptions.HttpsPort, listenOptions =>
             {
                 if (IsCertificateOptionsPopulated(sslOptions))
                 {
