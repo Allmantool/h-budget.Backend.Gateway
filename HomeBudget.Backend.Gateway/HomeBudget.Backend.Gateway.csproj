@@ -65,4 +65,8 @@
     <ProjectReference Include="..\HomeBudget.Core\HomeBudget.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="HomeBudget.Backend.Gateway.Api.Tests" />
+  </ItemGroup>
+
 </Project>
