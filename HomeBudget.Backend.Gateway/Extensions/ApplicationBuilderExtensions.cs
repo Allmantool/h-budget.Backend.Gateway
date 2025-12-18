@@ -40,7 +40,6 @@ namespace HomeBudget.Backend.Gateway.Extensions
 
             return app
                 .UseHsts()
-                .UseHttpsRedirection()
                 .UseResponseCaching()
                 .UseAuthorization()
                 .UseCorrelationId()

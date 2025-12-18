@@ -52,6 +52,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -71,10 +73,11 @@ jobs:
       - name: Restore .NET packages
         run: dotnet restore HomeBudgetBackendGateway.sln
 
-      - name: Install global tools
+      - name: Install external tools for quality gate verification
+        shell: bash
         run: |
-          dotnet tool install --global JetBrains.dotCover.GlobalTool --version 2023.2.3
-          dotnet tool install --global dotnet-sonarscanner --version 5.14.0
+          dotnet tool install --global JetBrains.dotCover.GlobalTool --version 2023.2.5
+          dotnet tool install --global dotnet-sonarscanner --version 9.0.2
 
       - name: Build solution
         shell: bash
@@ -101,6 +104,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Restore cached .NET and tools
         uses: actions/cache@v4
@@ -140,6 +145,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Restore cached .NET and tools
         uses: actions/cache@v4
