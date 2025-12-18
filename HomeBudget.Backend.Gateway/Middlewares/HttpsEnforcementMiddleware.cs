@@ -40,9 +40,9 @@ namespace HomeBudget.Backend.Gateway.Middlewares
                 return;
             }
 
-            var httpsUrl = $"https://{context.Request.Host}{context.Request.Path}{context.Request.QueryString}";
+            var redirectPath = $"{context.Request.Path}{context.Request.QueryString}";
 
-            context.Response.Redirect(httpsUrl, permanent: false);
+            context.Response.Redirect(redirectPath, permanent: false);
         }
     }
 }
