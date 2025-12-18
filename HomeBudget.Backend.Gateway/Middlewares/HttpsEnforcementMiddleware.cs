@@ -1,9 +1,8 @@
-﻿using System;
-using System.Threading.Tasks;
-
+﻿using HomeBudget.Backend.Gateway.Constants;
 using Microsoft.AspNetCore.Http;
-
-using HomeBudget.Backend.Gateway.Constants;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace HomeBudget.Backend.Gateway.Middlewares
 {
@@ -40,9 +39,13 @@ namespace HomeBudget.Backend.Gateway.Middlewares
                 return;
             }
 
-            var redirectPath = $"{context.Request.Path}{context.Request.QueryString}";
+            const string scheme = "https";
+            var host = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault()
+                       ?? context.Request.Host.Value;
 
-            context.Response.Redirect(redirectPath, permanent: false);
+            var httpsUrl = $"{scheme}://{host}{context.Request.Path}{context.Request.QueryString}";
+
+            context.Response.Redirect(httpsUrl, permanent: false);
         }
     }
 }

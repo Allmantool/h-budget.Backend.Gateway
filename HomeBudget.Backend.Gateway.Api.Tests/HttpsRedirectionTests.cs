@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System;
+using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -21,7 +22,8 @@ namespace HomeBudget.Backend.Gateway.Api.Tests
 
             _client = _factory.CreateClient(new WebApplicationFactoryClientOptions
             {
-                AllowAutoRedirect = false
+                AllowAutoRedirect = false,
+                BaseAddress = new Uri("http://localhost")
             });
         }
 
@@ -43,7 +45,13 @@ namespace HomeBudget.Backend.Gateway.Api.Tests
 
             var location = response.Headers.Location;
             Assert.That(location, Is.Not.Null);
-            Assert.That(location!.Scheme, Is.EqualTo("https"));
+
+            var redirectUri = location!.IsAbsoluteUri
+                ? location
+                : new Uri(_client.BaseAddress!, location);
+
+            Assert.That(redirectUri.Scheme, Is.EqualTo("https"));
+            Assert.That(redirectUri.AbsolutePath, Is.EqualTo("/swagger"));
         }
 
         [TestCase(Endpoints.HealthCheckSource)]
