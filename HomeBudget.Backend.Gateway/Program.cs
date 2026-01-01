@@ -72,21 +72,17 @@ hostBuilder
                 return;
             }
 
-            serverOptions.ConfigureHttpsDefaults(httpsOptions =>
+            if (IsCertificateOptionsPopulated(sslOptions))
             {
-                if (IsCertificateOptionsPopulated(sslOptions))
-                {
-                    httpsOptions.ServerCertificate = X509CertificateLoader.LoadPkcs12FromFile(sslOptions.CertificateName, sslOptions.Password);
-                }
-            });
+                var cert = X509CertificateLoader.LoadPkcs12FromFile(
+                    sslOptions.GetFullPath(),
+                    sslOptions.Password);
 
-            serverOptions.ListenAnyIP(sslOptions.HttpsPort, listenOptions =>
-            {
-                if (IsCertificateOptionsPopulated(sslOptions))
+                serverOptions.ListenAnyIP(sslOptions.HttpsPort, listenOptions =>
                 {
-                    listenOptions.UseHttps(sslOptions.CertificateName, sslOptions.Password);
-                }
-            });
+                    listenOptions.UseHttps(cert);
+                });
+            }
         });
     });
 
