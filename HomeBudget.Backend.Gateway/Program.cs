@@ -3,121 +3,192 @@ using System.Security.Cryptography.X509Certificates;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+
+using Ocelot.DependencyInjection;
+using Ocelot.Middleware;
+
 using Serilog;
 
+using HomeBudget.Backend.Gateway.Configuration;
 using HomeBudget.Backend.Gateway.Constants;
 using HomeBudget.Backend.Gateway.Extensions;
 using HomeBudget.Backend.Gateway.Extensions.Logs;
 using HomeBudget.Backend.Gateway.Extensions.OpenTelemetry;
+using HomeBudget.Backend.Gateway.Middlewares;
 using HomeBudget.Backend.Gateway.Models;
 using HomeBudget.Core.Options;
 
-var webAppBuilder = WebApplication.CreateBuilder(args);
-var webHost = webAppBuilder.WebHost;
-var services = webAppBuilder.Services;
-var environment = webAppBuilder.Environment;
-var applicationName = environment.ApplicationName;
-var configuration = webAppBuilder.Configuration;
+var builder = WebApplication.CreateBuilder(args);
 
-var hostEnvironmentName = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+var services = builder.Services;
+var environment = builder.Environment;
+var configuration = builder.Configuration;
 
 configuration
-    .SetBasePath(webAppBuilder.Environment.ContentRootPath)
+    .SetBasePath(environment.ContentRootPath)
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
     .AddJsonFile("ocelot.json", optional: false, reloadOnChange: true)
-    .AddJsonFile($"appsettings.{environment}.json", optional: true, reloadOnChange: true)
-    .AddJsonFile($"ocelot.{environment}.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"ocelot.{environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables();
 
-if (HostEnvironments.Development.Equals(environment.EnvironmentName, StringComparison.Ordinal))
+if (environment.IsDevelopment())
 {
-    configuration.AddJsonFile("appsettings.Local.json", true, true);
+    configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 }
 
-webAppBuilder.Host.UseSerilog((hostingContext, loggerConfiguration) =>
+builder.Host.UseSerilog((context, loggerConfig) =>
 {
-    loggerConfiguration.ConfigureSerilog(
-        hostingContext.Configuration,
+    loggerConfig.ConfigureSerilog(
+        context.Configuration,
         environment);
 });
 
-webAppBuilder.Configuration.InitializeLogger(
-    webAppBuilder.Environment,
-    webAppBuilder.Logging,
-    webAppBuilder.Host,
+builder.Configuration.InitializeLogger(
+    environment,
+    builder.Logging,
+    builder.Host,
     HostServiceOptions.Gateway);
 
-webAppBuilder.Logging.AddOpenTelemetryMetrics();
-
-webHost.ConfigureKestrel((context, serverOptions) =>
+builder.WebHost.ConfigureKestrel((context, options) =>
 {
-    var configuration = context.Configuration;
-    var hostEnvironment = context.HostingEnvironment;
-    var sslOptions = configuration.GetSection(nameof(SslOptions)).Get<SslOptions>();
+    var sslOptions = context.Configuration
+        .GetSection(nameof(SslOptions))
+        .Get<SslOptions>();
 
     if (sslOptions is null)
     {
         return;
     }
 
-    serverOptions.ListenAnyIP(sslOptions.HttpPort, listen =>
+    // HTTP (always enabled)
+    options.ListenAnyIP(sslOptions.HttpPort, listen =>
     {
         listen.Protocols = HttpProtocols.Http1;
     });
 
-    if (hostEnvironment.IsDevelopment())
+    if (context.HostingEnvironment.IsDevelopment())
     {
         return;
     }
 
     if (IsCertificateOptionsPopulated(sslOptions))
     {
-        var cert = X509CertificateLoader.LoadPkcs12FromFile(
+        var certificate = X509CertificateLoader.LoadPkcs12FromFile(
             sslOptions.GetFullPath(),
             sslOptions.Password);
 
-        serverOptions.ListenAnyIP(sslOptions.HttpsPort, listen =>
+        options.ListenAnyIP(sslOptions.HttpsPort, listen =>
         {
-            listen.UseHttps(cert);
+            listen.Protocols = HttpProtocols.Http1AndHttp2;
+            listen.UseHttps(certificate);
         });
     }
 });
 
-webHost.AddAndConfigureSentry();
+services.AddControllers();
 
-var serviceVersion = typeof(Program).Assembly.GetName().Version?.ToString();
+services.AddOcelot(configuration);
+
+services.AddEndpointsApiExplorer()
+    .SetUpHealthCheck(
+        configuration,
+        Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? Endpoints.HealthCheckSource)
+    .AddResponseCaching();
+
+services.AddHeaderPropagation(options =>
+{
+    options.Headers.Add(HttpHeaderKeys.HostService, HostServiceOptions.Gateway);
+    options.Headers.Add(HttpHeaderKeys.CorrelationId);
+});
+
+services.AddCors(options =>
+{
+    options.AddPolicy(
+        "CorsPolicy",
+        policy => policy
+            .AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader());
+});
+
+services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedProto;
+
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+builder.WebHost.AddAndConfigureSentry();
+
+builder.Logging.AddOpenTelemetryMetrics();
+
+var serviceVersion =
+    typeof(Program).Assembly.GetName().Version?.ToString();
+
 var isTracingEnabled = services.TryAddTracingSupport(
-   configuration,
-   environment,
-   HostServiceOptions.Gateway,
-   serviceVersion);
+    configuration,
+    environment,
+    HostServiceOptions.Gateway,
+    serviceVersion);
 
-var app = webAppBuilder.Build();
+var app = builder.Build();
+
+if (environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    app.UseHsts();
+}
+
+app.SetUpBaseApplication(environment, configuration);
+app.SetupOpenTelemetry();
+
+app.UseForwardedHeaders();
+app.UseMiddleware<HttpsEnforcementMiddleware>();
+
+app.UseCors("CorsPolicy");
+app.UseMiddleware<OcelotLoggingMiddleware>();
+
+await app.UseOcelot();
+
+if (isTracingEnabled)
+{
+    app.UseOpenTelemetryPrometheusScrapingEndpoint();
+    app.MapPrometheusScrapingEndpoint("/metrics");
+}
 
 try
 {
-    if (isTracingEnabled)
-    {
-        app.UseOpenTelemetryPrometheusScrapingEndpoint();
-        app.MapPrometheusScrapingEndpoint("/metrics");
-    }
-
     await app.RunAsync();
 }
 catch (Exception ex)
 {
-    Log.Logger.Error(ex, "Fatal error");
-    Environment.Exit(1);
+    Log.Fatal(ex, "Gateway terminated unexpectedly");
+    throw;
+}
+finally
+{
+    await Log.CloseAndFlushAsync();
 }
 
 static bool IsCertificateOptionsPopulated(SslOptions sslOptions)
 {
-    if (string.IsNullOrWhiteSpace(sslOptions.CertificateName) || string.IsNullOrWhiteSpace(sslOptions.Password))
+    if (string.IsNullOrWhiteSpace(sslOptions.CertificateName) ||
+        string.IsNullOrWhiteSpace(sslOptions.Password))
     {
-        throw new InvalidOperationException("HTTPS configuration is missing in appsettings.json");
+        throw new InvalidOperationException(
+            "HTTPS configuration is missing or invalid in appsettings.json");
     }
 
     return true;
