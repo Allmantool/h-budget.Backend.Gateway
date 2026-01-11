@@ -2,7 +2,6 @@
 using Microsoft.Extensions.Hosting;
 using Ocelot.Middleware;
 
-using HomeBudget.Backend.Gateway.Extensions.OpenTelemetry;
 using HomeBudget.Backend.Gateway.Middlewares;
 
 namespace HomeBudget.Backend.Gateway.Extensions;
@@ -22,7 +21,6 @@ internal static class GatewayPipelineExtensions
         }
 
         app.SetUpBaseApplication(app.Environment, app.Configuration);
-        app.SetupOpenTelemetry();
 
         app.UseForwardedHeaders();
         app.UseMiddleware<HttpsEnforcementMiddleware>();
