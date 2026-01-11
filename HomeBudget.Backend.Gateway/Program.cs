@@ -89,8 +89,6 @@ webHost.ConfigureKestrel((context, serverOptions) =>
 
 webHost.AddAndConfigureSentry();
 
-webHost.UseStartup<Startup>();
-
 var serviceVersion = typeof(Program).Assembly.GetName().Version?.ToString();
 var isTracingEnabled = services.TryAddTracingSupport(
    configuration,
