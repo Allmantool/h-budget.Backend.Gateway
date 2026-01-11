@@ -8,7 +8,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 
-using HomeBudget.Backend.Gateway;
 using HomeBudget.Backend.Gateway.Constants;
 using HomeBudget.Backend.Gateway.Extensions;
 using HomeBudget.Backend.Gateway.Extensions.Logs;
