@@ -26,7 +26,8 @@ if [[ -n "${PULL_REQUEST_ID:-}" ]]; then
         /d:sonar.pullrequest.key="${PULL_REQUEST_ID}" \
         /d:sonar.pullrequest.branch="${PULL_REQUEST_SOURCE_BRANCH}" \
         /d:sonar.pullrequest.base="${PULL_REQUEST_TARGET_BRANCH}" \
-        /d:sonar.coverage.exclusions="**/Test[s]/**/*" \
+        /d:sonar.exclusions="${SONAR_EXCLUSIONS}" \
+        /d:sonar.coverage.exclusions="${SONAR_COVERAGE_EXCLUSIONS}" \
         ${COVERAGE_PARAM} \
         /d:sonar.pullrequest.provider="github" \
         /d:sonar.pullrequest.github.repository="Allmantool/h-budget.Backend.Gateway" \
@@ -58,5 +59,6 @@ else
         /d:sonar.token="${SONAR_TOKEN}" \
         /d:sonar.host.url="https://sonarcloud.io" \
         ${COVERAGE_PARAM} \
-        /d:sonar.coverage.exclusions="**/Test[s]/**/*"
+        /d:sonar.exclusions="${SONAR_EXCLUSIONS}" \
+        /d:sonar.coverage.exclusions="${SONAR_COVERAGE_EXCLUSIONS}"
 fi
