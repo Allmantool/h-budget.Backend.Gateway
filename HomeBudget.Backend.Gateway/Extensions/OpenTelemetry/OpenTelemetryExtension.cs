@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -21,108 +22,108 @@ namespace HomeBudget.Backend.Gateway.Extensions.OpenTelemetry
     {
         public static bool TryAddTracingSupport(
             this IServiceCollection services,
-            IConfigurationRoot configuration,
+            IConfiguration configuration,
             IWebHostEnvironment environment,
             string serviceName,
             string serviceVersion)
         {
-            var alloyHost = configuration.GetValue<string>("ObservabilityOptions:TelemetryEndpoint");
+            var telemetryEndpoint =
+                configuration.GetValue<string>("ObservabilityOptions:TelemetryEndpoint");
 
-            if (string.IsNullOrWhiteSpace(alloyHost))
+            if (string.IsNullOrWhiteSpace(telemetryEndpoint))
             {
                 return false;
             }
 
-            var applicationName = environment.ApplicationName;
-
-            services
-               .AddOpenTelemetry()
-               .ConfigureResource(r => r
-                   .AddService(
-                       serviceName: applicationName,
-                       serviceVersion: serviceVersion,
-                       serviceInstanceId: Environment.MachineName))
-               .WithMetrics(m =>
-               {
-                   m.AddRuntimeInstrumentation()
-                    .AddHttpClientInstrumentation()
-                    .AddPrometheusExporter();
-               })
-               .WithTracing(t =>
-               {
-                   t.AddHttpClientInstrumentation()
-                    .AddSource(applicationName)
-                    .AddOtlpExporter(o =>
-                    {
-                        o.Endpoint = new Uri(alloyHost);
-                    });
-               });
+            var resourceBuilder = ResourceBuilder.CreateDefault()
+                .AddService(
+                    serviceName: serviceName,
+                    serviceVersion: serviceVersion,
+                    serviceInstanceId: Environment.MachineName)
+                .AddAttributes(new Dictionary<string, object>
+                {
+                    [OpenTelemetryTags.DeploymentEnvironment] = environment.EnvironmentName
+                });
 
             services
                 .AddOpenTelemetry()
-                .ConfigureResource(r => r
-                    .AddService(
-                       serviceName: serviceName,
-                       serviceVersion: serviceVersion,
-                       serviceInstanceId: Environment.MachineName)
-                    .AddAttributes(new Dictionary<string, object>
-                    {
-                        [OpenTelemetryTags.DeploymentEnvironment] = environment.EnvironmentName
-                    }))
-                .WithTracing(traceBuilder =>
+                .WithTracing(tracing =>
                 {
-                    traceBuilder
-                        .AddSource(Observability.ActivitySourceName)
+                    tracing
+                        .SetResourceBuilder(resourceBuilder)
                         .AddAspNetCoreInstrumentation(options =>
                         {
+                            options.RecordException = true;
+
                             options.EnrichWithHttpRequest = (activity, request) =>
                             {
-                                if (request.Headers.TryGetValue(HttpHeaderKeys.CorrelationId, out var cid))
+                                if (request.Headers.TryGetValue(
+                                        HttpHeaderKeys.CorrelationId,
+                                        out var correlationId))
                                 {
-                                    activity.SetTag(ActivityTags.CorrelationId, cid.ToString());
+                                    activity.SetTag(
+                                        ActivityTags.CorrelationId,
+                                        correlationId.ToString());
                                 }
                             };
 
                             options.EnrichWithHttpResponse = (activity, response) =>
                             {
-                                activity.SetTag(ActivityTags.HttpStatusCode, response.StatusCode);
+                                activity.SetTag(
+                                    ActivityTags.HttpStatusCode,
+                                    response.StatusCode);
                             };
 
                             options.EnrichWithException = (activity, exception) =>
                             {
-                                activity.SetTag(ActivityTags.ExceptionMessage, exception.Message);
+                                activity.SetTag(
+                                    ActivityTags.ExceptionMessage,
+                                    exception.Message);
                             };
                         })
-                         .AddHttpClientInstrumentation()
-                         .AddSource(HostServiceOptions.Gateway)
-                         .AddOtlpExporter(o =>
-                         {
-                             o.Endpoint = new Uri(alloyHost);
-                             o.Protocol = OtlpExportProtocol.Grpc;
-                         });
+                        .AddHttpClientInstrumentation(options =>
+                        {
+                            options.RecordException = true;
+                        })
+                        .AddEntityFrameworkCoreInstrumentation()
+                        .AddSqlClientInstrumentation(options =>
+                        {
+                            options.RecordException = true;
+                        })
+                        .AddSource(Observability.ActivitySourceName)
+                        .AddSource(HostServiceOptions.Gateway)
+                        .AddSource(environment.ApplicationName)
+                        .AddOtlpExporter(options =>
+                        {
+                            options.Endpoint = new Uri(telemetryEndpoint);
+                            options.Protocol = OtlpExportProtocol.Grpc;
+                        });
                 })
-                .ConfigureResource(resource => resource.AddService(serviceName: environment.ApplicationName))
-                .WithMetrics(metrics => metrics
-                    .AddAspNetCoreInstrumentation()
-                    .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation()
-                    .AddMeter(MetersTags.Hosting)
-                    .AddMeter(MetersTags.Routing)
-                    .AddMeter(MetersTags.Diagnostics)
-                    .AddMeter(MetersTags.Kestrel)
-                    .AddMeter(MetersTags.HttpConnections)
-                    .AddMeter(MetersTags.HealthChecks)
-                    .SetMaxMetricStreams(OpenTelemetryOptions.MaxMetricStreams)
-                    .AddPrometheusExporter()
-                );
+
+                .WithMetrics(metrics =>
+                {
+                    metrics
+                        .SetResourceBuilder(resourceBuilder)
+                        .AddAspNetCoreInstrumentation()
+                        .AddHttpClientInstrumentation()
+                        .AddRuntimeInstrumentation()
+                        .AddMeter(MetersTags.Hosting)
+                        .AddMeter(MetersTags.Routing)
+                        .AddMeter(MetersTags.Diagnostics)
+                        .AddMeter(MetersTags.Kestrel)
+                        .AddMeter(MetersTags.HttpConnections)
+                        .AddMeter(MetersTags.HealthChecks)
+                        .SetMaxMetricStreams(OpenTelemetryOptions.MaxMetricStreams)
+                        .AddPrometheusExporter();
+                });
 
             return true;
         }
 
-        public static IApplicationBuilder SetupOpenTelemetry(this IApplicationBuilder app)
+        public static IApplicationBuilder SetupOpenTelemetry(
+            this IApplicationBuilder app)
         {
             app.UseOpenTelemetryPrometheusScrapingEndpoint();
-
             return app;
         }
     }

@@ -25,8 +25,9 @@ internal sealed class SslKestrelConfigurator : IKestrelConfigurator
             return;
         }
 
-        options.ListenAnyIP(ssl.HttpPort, l =>
-            l.Protocols = HttpProtocols.Http1);
+        options.ListenAnyIP(
+            ssl.HttpPort,
+            l => l.Protocols = HttpProtocols.Http1);
 
         if (context.HostingEnvironment.IsDevelopment())
         {
