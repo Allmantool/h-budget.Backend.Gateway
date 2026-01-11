@@ -30,7 +30,7 @@ var app = webAppBuilder.Build();
 
 try
 {
-    app.UseGatewayPipeline();
+    await app.UseGatewayPipelineAsync();
 
     if (isTracingEnabled)
     {

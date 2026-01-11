@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using System.Threading.Tasks;
+
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
 using Ocelot.Middleware;
 
@@ -8,7 +10,7 @@ namespace HomeBudget.Backend.Gateway.Extensions;
 
 internal static class GatewayPipelineExtensions
 {
-    public static WebApplication UseGatewayPipeline(
+    public static async Task<WebApplication> UseGatewayPipelineAsync(
         this WebApplication app)
     {
         if (app.Environment.IsDevelopment())
@@ -27,7 +29,7 @@ internal static class GatewayPipelineExtensions
         app.UseCors("CorsPolicy");
         app.UseMiddleware<OcelotLoggingMiddleware>();
 
-        app.UseOcelot().GetAwaiter().GetResult();
+        await app.UseOcelot();
 
         return app;
     }
