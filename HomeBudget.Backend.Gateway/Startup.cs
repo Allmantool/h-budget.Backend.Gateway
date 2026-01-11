@@ -39,8 +39,6 @@ namespace HomeBudget.Backend.Gateway
                 options.Headers.Add(HttpHeaderKeys.CorrelationId);
             });
 
-            services.InitializeOpenTelemetry(HostEnvironment);
-
             services.AddCors(options =>
             {
                 options.AddPolicy(

@@ -2,6 +2,7 @@
 {
     internal static class LoggerTags
     {
+        public const string MachineName = nameof(MachineName);
         public const string Environment = nameof(Environment);
         public const string HostService = nameof(HostService);
         public const string ApplicationName = nameof(ApplicationName);
