@@ -11,9 +11,9 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 using HomeBudget.Backend.Gateway.Constants;
-using HomeBudget.Core.Options;
-using HomeBudget.Core.Constants;
 using HomeBudget.Core;
+using HomeBudget.Core.Constants;
+using HomeBudget.Core.Options;
 
 namespace HomeBudget.Backend.Gateway.Extensions.OpenTelemetry
 {
