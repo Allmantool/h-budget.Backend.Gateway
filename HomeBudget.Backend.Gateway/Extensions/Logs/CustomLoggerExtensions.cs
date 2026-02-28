@@ -52,7 +52,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
                 })
                 .Enrich.WithElasticApmCorrelationInfo()
                 .TryAddSeqSupport(configuration)
-                .TryAddElasticSearchSupport(configuration, environment, typeof(Program).Assembly.GetName().Name);
+                .TryAddElasticSearchSupport(configuration, environment);
         }
 
         public static Logger InitializeLogger(
