@@ -86,35 +86,36 @@ namespace HomeBudget.Backend.Gateway.Extensions
                 }
 
                 var environment = hostBuilderContext.HostingEnvironment;
-                services.AddLogging(logging =>
-                {
-                    logging.AddSentry(sentryLoggingOptions =>
+                services
+                    .AddLogging(logging =>
                     {
-                        var version = typeof(SentryExtensions).Assembly.GetName().Version;
-
-                        if (version != null)
+                        logging.AddSentry(sentryLoggingOptions =>
                         {
-                            sentryLoggingOptions.Release = version.ToString();
-                        }
+                            var version = typeof(SentryExtensions).Assembly.GetName().Version;
 
-                        if (environment.IsUnderDevelopment())
-                        {
-                            sentryLoggingOptions.Debug = true;
-                            sentryLoggingOptions.DiagnosticLogger = new TraceDiagnosticLogger(SentryLevel.Debug);
-                        }
+                            if (version != null)
+                            {
+                                sentryLoggingOptions.Release = version.ToString();
+                            }
 
-                        sentryLoggingOptions.Environment = environment.EnvironmentName;
-                        sentryLoggingOptions.Dsn = verifiedOptions.Dns;
-                        sentryLoggingOptions.TracesSampleRate = environment.IsUnderDevelopment()
-                            ? SentryBaseOptions.TracesSampleRateForDevelopment
-                            : SentryBaseOptions.TracesSampleRateForProduction;
-                        sentryLoggingOptions.IsGlobalModeEnabled = true;
-                        sentryLoggingOptions.AttachStacktrace = true;
-                        sentryLoggingOptions.SendDefaultPii = environment.IsUnderDevelopment();
-                        sentryLoggingOptions.MinimumBreadcrumbLevel = environment.IsUnderDevelopment() ? LogLevel.Debug : LogLevel.Information;
-                        sentryLoggingOptions.MinimumEventLevel = LogLevel.Warning;
-                        sentryLoggingOptions.DiagnosticLevel = SentryLevel.Error;
-                    });
+                            if (environment.IsUnderDevelopment())
+                            {
+                                sentryLoggingOptions.Debug = true;
+                                sentryLoggingOptions.DiagnosticLogger = new TraceDiagnosticLogger(SentryLevel.Debug);
+                            }
+
+                            sentryLoggingOptions.Environment = environment.EnvironmentName;
+                            sentryLoggingOptions.Dsn = verifiedOptions.Dns;
+                            sentryLoggingOptions.TracesSampleRate = environment.IsUnderDevelopment()
+                                ? SentryBaseOptions.TracesSampleRateForDevelopment
+                                : SentryBaseOptions.TracesSampleRateForProduction;
+                            sentryLoggingOptions.IsGlobalModeEnabled = true;
+                            sentryLoggingOptions.AttachStacktrace = true;
+                            sentryLoggingOptions.SendDefaultPii = environment.IsUnderDevelopment();
+                            sentryLoggingOptions.MinimumBreadcrumbLevel = environment.IsUnderDevelopment() ? LogLevel.Debug : LogLevel.Information;
+                            sentryLoggingOptions.MinimumEventLevel = LogLevel.Warning;
+                            sentryLoggingOptions.DiagnosticLevel = SentryLevel.Error;
+                        });
                 });
             });
         }

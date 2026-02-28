@@ -37,8 +37,9 @@ internal static class GatewayServiceExtensions
 
         services.AddCors(o =>
         {
-            o.AddPolicy("CorsPolicy", p =>
-                p.AllowAnyOrigin()
+            o.AddPolicy(
+                "CorsPolicy",
+                p => p.AllowAnyOrigin()
                  .AllowAnyMethod()
                  .AllowAnyHeader());
         });

@@ -2,7 +2,6 @@
 using Serilog;
 
 using HomeBudget.Backend.Gateway.Extensions.Logs;
-using HomeBudget.Core.Options;
 
 namespace HomeBudget.Backend.Gateway.Extensions;
 
@@ -18,9 +17,7 @@ internal static class GatewayLoggingExtensions
 
         builder.Configuration.InitializeLogger(
             env,
-            builder.Logging,
-            builder.Host,
-            HostServiceOptions.Gateway);
+            builder.Logging);
 
         return builder;
     }

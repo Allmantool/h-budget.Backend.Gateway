@@ -58,9 +58,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
         public static Logger InitializeLogger(
             this IConfiguration configuration,
             IWebHostEnvironment environment,
-            ILoggingBuilder loggingBuilder,
-            ConfigureHostBuilder host,
-            string hostServiceName)
+            ILoggingBuilder loggingBuilder)
         {
             var logger = new LoggerConfiguration()
                 .ConfigureSerilog(configuration, environment)
@@ -69,13 +67,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
             loggingBuilder.ClearProviders();
             loggingBuilder.AddSerilog(logger);
 
-            loggingBuilder.AddOpenTelemetry(options =>
-            {
-                options.IncludeScopes = true;
-                options.ParseStateValues = true;
-                options.IncludeFormattedMessage = true;
-                options.AddOtlpExporter();
-            });
+            loggingBuilder.AddOpenTelemetryMetrics();
 
             Log.Logger = logger;
 

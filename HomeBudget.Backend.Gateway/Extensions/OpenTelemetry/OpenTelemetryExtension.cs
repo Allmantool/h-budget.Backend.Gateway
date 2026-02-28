@@ -54,7 +54,6 @@ namespace HomeBudget.Backend.Gateway.Extensions.OpenTelemetry
                         .AddAspNetCoreInstrumentation(options =>
                         {
                             options.RecordException = true;
-
                             options.EnrichWithHttpRequest = (activity, request) =>
                             {
                                 if (request.Headers.TryGetValue(
@@ -99,7 +98,6 @@ namespace HomeBudget.Backend.Gateway.Extensions.OpenTelemetry
                             options.Protocol = OtlpExportProtocol.Grpc;
                         });
                 })
-
                 .WithMetrics(metrics =>
                 {
                     metrics
@@ -124,6 +122,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.OpenTelemetry
             this IApplicationBuilder app)
         {
             app.UseOpenTelemetryPrometheusScrapingEndpoint();
+
             return app;
         }
     }
