@@ -1,6 +1,7 @@
 ﻿using System;
 
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 
 using HomeBudget.Backend.Gateway.Extensions;
@@ -26,6 +27,8 @@ var isTracingEnabled = services.TryAddTracingSupport(
    HostServiceOptions.Gateway,
    serviceVersion);
 
+services.AddAllElasticApm();
+
 var app = webAppBuilder.Build();
 
 try
@@ -34,7 +37,7 @@ try
 
     if (isTracingEnabled)
     {
-        app.UseOpenTelemetryPrometheusScrapingEndpoint();
+        app.SetupOpenTelemetry();
         app.MapPrometheusScrapingEndpoint("/metrics");
     }
 
