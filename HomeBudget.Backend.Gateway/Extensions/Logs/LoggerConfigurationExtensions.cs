@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading.Channels;
 
 using Elastic.Apm.SerilogEnricher;
@@ -13,12 +14,13 @@ using Serilog;
 using Serilog.Debugging;
 using Serilog.Events;
 
+using HomeBudget.Backend.Gateway.Constants;
 using HomeBudget.Core.Constants;
 using HomeBudget.Core.Options;
 
 namespace HomeBudget.Backend.Gateway.Extensions.Logs
 {
-    public static class LoggerConfigurationExtensions
+    internal static class LoggerConfigurationExtensions
     {
         public static LoggerConfiguration TryAddSeqSupport(this LoggerConfiguration loggerConfiguration, IConfiguration configuration)
         {
@@ -53,8 +55,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
         public static LoggerConfiguration TryAddElasticSearchSupport(
             this LoggerConfiguration loggerConfiguration,
             IConfiguration configuration,
-            IHostEnvironment environment,
-            string formattedExecuteAssemblyName)
+            IHostEnvironment environment)
         {
             try
             {
@@ -72,7 +73,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
                     return loggerConfiguration;
                 }
 
-                var elasticNodeUrl = (elasticOptions.Uri?.ToString() ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")) ?? string.Empty;
+                var elasticNodeUrl = (elasticOptions.Uri?.ToString() ?? Environment.GetEnvironmentVariable(EnvironmentsVariables.AspNetCoreUrls)) ?? string.Empty;
 
                 return string.IsNullOrWhiteSpace(elasticNodeUrl)
                     ? loggerConfiguration
@@ -83,7 +84,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
                             {
                                 new(elasticNodeUrl)
                             },
-                            opt => opt.ConfigureElasticSink(environment, formattedExecuteAssemblyName));
+                            opt => opt.ConfigureElasticSink(environment));
             }
             catch (Exception ex)
             {
@@ -95,13 +96,17 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
 
         private static void ConfigureElasticSink(
             this ElasticsearchSinkOptions options,
-            IHostEnvironment environment,
-            string formattedExecuteAssemblyName)
+            IHostEnvironment environment)
         {
-            var dateIndexPostfix = DateTime.UtcNow.ToString(DateTimeFormats.ElasticSearch);
-            var streamName = $"{formattedExecuteAssemblyName}-{environment.EnvironmentName}-{dateIndexPostfix}".Replace(".", "-").ToLower();
+            var formattedExecuteAssemblyName = typeof(Program).Assembly.GetName().Name;
+            var dateIndexPostfix = DateTime.UtcNow.ToString(DateFormats.ElasticSearch, CultureInfo.InvariantCulture);
+            var baseStreamName = $"{formattedExecuteAssemblyName}-{environment.EnvironmentName}-{dateIndexPostfix}";
 
-            options.DataStream = new DataStreamName(streamName);
+            var formattedStreamName = baseStreamName
+                .Replace(".", "-", StringComparison.OrdinalIgnoreCase)
+                .ToUpperInvariant();
+
+            options.DataStream = new DataStreamName(formattedStreamName);
             options.BootstrapMethod = BootstrapMethod.Failure;
             options.MinimumLevel = LogEventLevel.Debug;
             options.ConfigureChannel = channelOpts =>
