@@ -1,7 +1,11 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.Http;
+using Serilog;
+using Serilog.Context;
+
 using HomeBudget.Backend.Gateway.Constants;
 
 namespace HomeBudget.Backend.Gateway.Middlewares
@@ -12,13 +16,33 @@ namespace HomeBudget.Backend.Gateway.Middlewares
         {
             var requestHeaders = context.Request.Headers;
 
-            _ = requestHeaders.TryGetValue(HttpHeaderKeys.CorrelationId, out var correlationId);
+            string correlationId;
 
-            var responseHeaders = context.Response.Headers;
+            if (requestHeaders.TryGetValue(HttpHeaderKeys.CorrelationId, out var headerValue))
+            {
+                correlationId = headerValue.ToString();
+            }
+            else
+            {
+                correlationId = Guid.NewGuid().ToString();
+            }
 
-            responseHeaders.TryAdd(HttpHeaderKeys.CorrelationId, correlationId);
+            context.Response.Headers[HttpHeaderKeys.CorrelationId] = correlationId;
 
-            await next.Invoke(context);
+            var traceId = Activity.Current?.TraceId.ToString();
+
+            context.Response.Headers[HttpHeaderKeys.TraceId] = traceId;
+
+            using (LogContext.PushProperty(HttpHeaderKeys.CorrelationId, correlationId))
+            using (LogContext.PushProperty(HttpHeaderKeys.TraceId, traceId))
+            {
+                Log.Information(
+                    "Request started {Method} {Path}",
+                    context.Request.Method,
+                    context.Request.Path);
+
+                await next.Invoke(context);
+            }
         }
     }
 }

@@ -33,6 +33,7 @@ internal static class GatewayServiceExtensions
         {
             o.Headers.Add(HttpHeaderKeys.HostService, HostServiceOptions.Gateway);
             o.Headers.Add(HttpHeaderKeys.CorrelationId);
+            o.Headers.Add("traceparent");
         });
 
         services.AddCors(o =>

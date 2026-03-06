@@ -26,7 +26,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
                 Host = httpContext.Request.Host.ToString(),
                 User = GetUserInfo(httpContext.User),
                 CorrelationIdFromRequest = correlationIdFromRequest,
-                CorrelationIdFromResponse = correlationIdFromResponse
+                CorrelationIdFromResponse = correlationIdFromResponse,
             };
 
             diagnosticContext.Set("HttpContext", httpContextInfo, true);

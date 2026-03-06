@@ -4,5 +4,6 @@
     {
         public const string CorrelationId = nameof(CorrelationId);
         public const string HostService = nameof(HostService);
+        public const string TraceId = "trace-id";
     }
 }
