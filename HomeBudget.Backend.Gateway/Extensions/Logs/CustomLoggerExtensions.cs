@@ -38,6 +38,7 @@ namespace HomeBudget.Backend.Gateway.Extensions.Logs
                 .Enrich.WithProperty(LoggerTags.HostService, HostServiceOptions.Gateway)
                 .Enrich.WithProperty(LoggerTags.ApplicationName, environment.ApplicationName)
                 .Enrich.WithSpan()
+                .Enrich.With<ActivityEnricher>()
                 .Enrich.WithActivityId()
                 .Enrich.WithActivityTags()
                 .WriteTo.Debug()

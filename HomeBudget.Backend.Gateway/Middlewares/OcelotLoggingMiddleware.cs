@@ -1,10 +1,9 @@
-﻿using System;
-
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.Http;
 using Newtonsoft.Json;
 using Ocelot.Middleware;
+using Serilog;
 
 namespace HomeBudget.Backend.Gateway.Middlewares
 {
@@ -27,9 +26,9 @@ namespace HomeBudget.Backend.Gateway.Middlewares
                 NullValueHandling = NullValueHandling.Ignore
             };
 
-            Console.WriteLine($"Request: {request.Method} {request.Scheme} {request.Host} {request.Path}");
-            Console.WriteLine($"UpstreamPathTemplate: {JsonConvert.SerializeObject(downStream.UpstreamPathTemplate, options)}");
-            Console.WriteLine($"DownstreamPathTemplate: {JsonConvert.SerializeObject(downStream.DownstreamPathTemplate, options)}");
+            Log.Information($"Request: {request.Method} {request.Scheme} {request.Host} {request.Path}");
+            Log.Information($"UpstreamPathTemplate: {JsonConvert.SerializeObject(downStream.UpstreamPathTemplate, options)}");
+            Log.Information($"DownstreamPathTemplate: {JsonConvert.SerializeObject(downStream.DownstreamPathTemplate, options)}");
 
             if (downStream.DownstreamPathTemplate?.Value == null || downStream.UpstreamPathTemplate?.OriginalValue == null)
             {
@@ -42,7 +41,7 @@ namespace HomeBudget.Backend.Gateway.Middlewares
 
             if (!string.IsNullOrWhiteSpace(downstreamPath) && !string.IsNullOrWhiteSpace(upstreamPath))
             {
-                Console.WriteLine($"Upstream Path: '{upstreamPath}', Downstream Path: '{downstreamPath}'");
+                Log.Information($"Upstream Path: '{upstreamPath}', Downstream Path: '{downstreamPath}'");
             }
 
             await next(context);
