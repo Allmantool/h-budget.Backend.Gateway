@@ -4,6 +4,9 @@ set -euo pipefail
 # Path to coverage file (relative to repository root)
 COVERAGE_FILE="${COVERAGE_FILE:-test-results/backend-gateway-coverage.xml}"
 
+# Debug: print the raw environment variable (to detect hidden quotes)
+echo "DEBUG: SONAR_EXCLUSIONS='${SONAR_EXCLUSIONS}'"
+
 # Determine if we are running in a pull request context
 if [[ -n "${PULL_REQUEST_ID:-}" ]]; then
     echo "Running Sonar begin for Pull Request ${PULL_REQUEST_ID}"
