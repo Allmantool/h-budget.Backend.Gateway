@@ -1,10 +1,46 @@
 {
   "Routes": [
     {
-      "UpstreamPathTemplate": "/gateway/accounting/{entity}/{paymentAccountId}/byId/{operationId}",
-      "UpstreamHttpMethod": [
-        "GET"
+      "UpstreamPathTemplate": "/gateway/accounting/notifications/account",
+      "UpstreamHttpMethod": [ "GET" ],
+
+      "DownstreamPathTemplate": "/notifications/account",
+      "DownstreamScheme": "http",
+
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
       ],
+
+      "RequestIdKey": "OcRequestId",
+
+      "UpstreamHttpVersion": "1.1",
+      "DownstreamHttpVersion": "1.1",
+
+      "HttpHandlerOptions": {
+        "AllowAutoRedirect": false,
+        "UseCookieContainer": false,
+        "UseTracing": true,
+        "MaxConnectionsPerServer": 1000
+      },
+
+      "UpstreamHeaderTransform": {
+        "Last-Event-ID": "{Last-Event-ID}"
+      },
+
+      "DownstreamHeaderTransform": {
+        "Cache-Control": "no-store",
+        "Connection": "keep-alive"
+      },
+
+      "Timeout": 0
+    },
+
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/{entity}/{paymentAccountId}/byId/{operationId}",
+      "UpstreamHttpMethod": [ "GET" ],
       "DownstreamPathTemplate": "/{entity}/{paymentAccountId}/byId/{operationId}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
@@ -14,28 +50,10 @@
         }
       ]
     },
-    {
-      "UpstreamPathTemplate": "/gateway/accounting/{service}",
-      "UpstreamHttpMethod": [
-        "GET"
-      ],
-      "DownstreamPathTemplate": "/{service}",
-      "DownstreamScheme": "http",
-      "DownstreamHostAndPorts": [
-        {
-          "Host": "homebudget-accounting-api",
-          "Port": 80
-        }
-      ]
-    },
+
     {
       "UpstreamPathTemplate": "/gateway/accounting/{entity}/{paymentAccountId}",
-      "UpstreamHttpMethod": [
-        "GET",
-        "POST",
-        "DELETE",
-        "PATCH"
-      ],
+      "UpstreamHttpMethod": [ "GET", "POST", "DELETE", "PATCH" ],
       "DownstreamPathTemplate": "/{entity}/{paymentAccountId}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
@@ -45,11 +63,23 @@
         }
       ]
     },
+
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/{service}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/{service}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+
     {
       "UpstreamPathTemplate": "/gateway/{service}/byId/{id}",
-      "UpstreamHttpMethod": [
-        "GET"
-      ],
+      "UpstreamHttpMethod": [ "GET" ],
       "DownstreamPathTemplate": "/{service}/byId/{id}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
@@ -59,12 +89,10 @@
         }
       ]
     },
+
     {
       "UpstreamPathTemplate": "/gateway/{service}",
-      "UpstreamHttpMethod": [
-        "GET",
-        "POST"
-      ],
+      "UpstreamHttpMethod": [ "GET", "POST" ],
       "DownstreamPathTemplate": "/{service}",
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
