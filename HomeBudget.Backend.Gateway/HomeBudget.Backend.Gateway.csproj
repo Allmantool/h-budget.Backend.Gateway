@@ -29,6 +29,7 @@
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
     <PackageReference Include="Ocelot" />
+    <PackageReference Include="Ocelot.Provider.Polly" />
     <PackageReference Include="OpenTelemetry" />
     <PackageReference Include="OpenTelemetry.Api" />
     <PackageReference Include="OpenTelemetry.Exporter.Console" />

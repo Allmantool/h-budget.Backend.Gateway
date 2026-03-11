@@ -1,6 +1,6 @@
-@HomeBudget.Backend.Gateway_HostAddress = http://localhost:5074
+@HomeBudget.Backend.Gateway_HostAddress = http://localhost:80
 
-GET {{HomeBudget.Backend.Gateway_HostAddress}}/weatherforecast/
+GET {{HomeBudget.Backend.Gateway_HostAddress}}
 Accept: application/json
 
 ###
