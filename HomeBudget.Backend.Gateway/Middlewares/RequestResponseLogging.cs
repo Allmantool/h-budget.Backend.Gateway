@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
+using HomeBudget.Backend.Gateway.Constants;
+
 namespace HomeBudget.Backend.Gateway.Middlewares
 {
     public class RequestResponseLogging(RequestDelegate next, ILogger<RequestResponseLogging> logger)
@@ -20,6 +22,14 @@ namespace HomeBudget.Backend.Gateway.Middlewares
             foreach (var header in context.Request.Headers)
             {
                 builder.Append(header.Key).Append(": ").AppendLine(header.Value);
+            }
+
+            if (ServerSentEventsMiddleware.IsServerSentEventsRequest(context.Request))
+            {
+                builder.AppendLine("Skipping response body buffering for SSE request.");
+                await next(context);
+                logger.LogInformation(builder.ToString());
+                return;
             }
 
             var originalBodyStream = context.Response.Body;
