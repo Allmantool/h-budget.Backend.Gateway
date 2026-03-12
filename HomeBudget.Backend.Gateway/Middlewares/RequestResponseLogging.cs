@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
+using HomeBudget.Backend.Gateway.Constants;
+
 namespace HomeBudget.Backend.Gateway.Middlewares
 {
     public class RequestResponseLogging(RequestDelegate next, ILogger<RequestResponseLogging> logger)
@@ -14,12 +16,20 @@ namespace HomeBudget.Backend.Gateway.Middlewares
             context.Request.EnableBuffering();
             var builder = new StringBuilder();
             var request = await FormatRequestAsync(context.Request);
-            builder.Append("Request: ").AppendLine(request);
+            builder.Append("Request: ").AppendLine(SanitizeForLogging(request));
             builder.AppendLine("Request headers:");
 
             foreach (var header in context.Request.Headers)
             {
-                builder.Append(header.Key).Append(": ").AppendLine(header.Value);
+                builder.Append(SanitizeForLogging(header.Key)).Append(": ").AppendLine(SanitizeForLogging(header.Value));
+            }
+
+            if (ServerSentEventsMiddleware.IsServerSentEventsRequest(context.Request))
+            {
+                builder.AppendLine("Skipping response body buffering for SSE request.");
+                await next(context);
+                logger.LogInformation(builder.ToString());
+                return;
             }
 
             var originalBodyStream = context.Response.Body;
@@ -28,12 +38,12 @@ namespace HomeBudget.Backend.Gateway.Middlewares
             await next(context);
 
             var response = await FormatResponseAsync(context.Response);
-            builder.Append("Response: ").AppendLine(response);
+            builder.Append("Response: ").AppendLine(SanitizeForLogging(response));
             builder.AppendLine("Response headers: ");
 
             foreach (var header in context.Response.Headers)
             {
-                builder.Append(header.Key).Append(": ").AppendLine(header.Value);
+                builder.Append(SanitizeForLogging(header.Key)).Append(": ").AppendLine(SanitizeForLogging(header.Value));
             }
 
             logger.LogInformation(builder.ToString());
@@ -50,7 +60,7 @@ namespace HomeBudget.Backend.Gateway.Middlewares
                 leaveOpen: true);
 
             var body = await reader.ReadToEndAsync();
-            var formattedRequest = $"{request.Method} {request.Scheme}://{request.Host}{request.Path}{request.QueryString} {body}";
+            var formattedRequest = $"{SanitizeForLogging(request.Method)} {SanitizeForLogging(request.Scheme)}://{SanitizeForLogging(request.Host.ToString())}{SanitizeForLogging(request.Path)}{SanitizeForLogging(request.QueryString.ToString())} {SanitizeForLogging(body)}";
             request.Body.Position = 0;
 
             return formattedRequest;
@@ -62,7 +72,19 @@ namespace HomeBudget.Backend.Gateway.Middlewares
             var text = await new StreamReader(response.Body).ReadToEndAsync();
             response.Body.Seek(0, SeekOrigin.Begin);
 
-            return $"{response.StatusCode}: {text}";
+            return $"{response.StatusCode}: {SanitizeForLogging(text)}";
+        }
+
+        private static string SanitizeForLogging(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            return value
+                .Replace("\r", " ")
+                .Replace("\n", " ");
         }
     }
 }
