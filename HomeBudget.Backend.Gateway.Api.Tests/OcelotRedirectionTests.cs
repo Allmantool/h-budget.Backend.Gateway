@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
+using Ocelot.Provider.Polly;
 
 namespace HomeBudget.Backend.Gateway.Api.Tests
 {
@@ -31,6 +32,7 @@ namespace HomeBudget.Backend.Gateway.Api.Tests
                  {
                      services.AddSingleton<MockDownstreamHandler>();
                      services.AddOcelot()
+                             .AddPolly()
                              .AddDelegatingHandler<MockDownstreamHandler>(true);
                  })
                  .Configure(app =>

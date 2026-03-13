@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Ocelot.DependencyInjection;
+using Ocelot.Provider.Polly;
 
 using HomeBudget.Backend.Gateway.Configuration;
 using HomeBudget.Backend.Gateway.Constants;
@@ -20,7 +21,8 @@ internal static class GatewayServiceExtensions
         var configuration = builder.Configuration;
 
         services.AddControllers();
-        services.AddOcelot(configuration);
+        services.AddOcelot(configuration)
+            .AddPolly();
 
         services.AddEndpointsApiExplorer()
             .SetUpHealthCheck(

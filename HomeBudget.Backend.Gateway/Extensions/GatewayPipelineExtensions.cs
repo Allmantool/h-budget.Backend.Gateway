@@ -25,8 +25,14 @@ internal static class GatewayPipelineExtensions
         app.SetUpBaseApplication(app.Environment, app.Configuration);
 
         app.UseForwardedHeaders();
-        app.UseMiddleware<HttpsEnforcementMiddleware>();
+
+        if (!app.Environment.IsDevelopment())
+        {
+            app.UseMiddleware<HttpsEnforcementMiddleware>();
+        }
+
         app.UseCors("CorsPolicy");
+        app.UseMiddleware<ServerSentEventsMiddleware>();
         app.UseMiddleware<OcelotLoggingMiddleware>();
 
         await app.UseOcelot();
