@@ -31,8 +31,9 @@
       },
 
       "DownstreamHeaderTransform": {
-        "Cache-Control": "no-store",
-        "Connection": "keep-alive"
+        "Cache-Control": "no-cache, no-store",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no"
       },
 
       "Timeout": 0
