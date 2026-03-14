@@ -1,6 +1,34 @@
 {
   "Routes": [
     {
+      "UpstreamPathTemplate": "/gateway/accounting/notifications/account-hub",
+      "UpstreamHttpMethod": [ "GET" ],
+
+      "DownstreamPathTemplate": "/notifications/account-hub",
+      "DownstreamScheme": "ws",
+
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ],
+
+      "RequestIdKey": "OcRequestId",
+
+      "UpstreamHttpVersion": "1.1",
+      "DownstreamHttpVersion": "1.1",
+
+      "HttpHandlerOptions": {
+        "AllowAutoRedirect": false,
+        "UseCookieContainer": false,
+        "UseTracing": true,
+        "MaxConnectionsPerServer": 1000
+      },
+
+      "Timeout": 0
+    },
+    {
       "UpstreamPathTemplate": "/gateway/accounting/notifications/account",
       "UpstreamHttpMethod": [ "GET" ],
 

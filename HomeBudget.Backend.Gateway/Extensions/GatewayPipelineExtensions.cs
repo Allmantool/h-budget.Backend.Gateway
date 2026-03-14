@@ -32,6 +32,7 @@ internal static class GatewayPipelineExtensions
         }
 
         app.UseCors("CorsPolicy");
+        app.UseWebSockets();
         app.UseMiddleware<ServerSentEventsMiddleware>();
         app.UseMiddleware<OcelotLoggingMiddleware>();
 
