@@ -36,6 +36,8 @@ internal static class GatewayServiceExtensions
             o.Headers.Add(HttpHeaderKeys.HostService, HostServiceOptions.Gateway);
             o.Headers.Add(HttpHeaderKeys.CorrelationId);
             o.Headers.Add("traceparent");
+            o.Headers.Add("tracestate");
+            o.Headers.Add("baggage");
         });
 
         services.AddCors(o =>
