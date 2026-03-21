@@ -23,7 +23,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ steps.validate.outputs.release_tag }}
-      image_ref: ${{ steps.validate.outputs.image_ref }}
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v5
@@ -42,7 +41,6 @@ jobs:
           fi
 
           echo "release_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          echo "image_ref=${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           echo "Validated tag ${GITHUB_REF_NAME} on commit ${GITHUB_SHA}."
 
   validate-application-build:
@@ -119,18 +117,21 @@ jobs:
       - name: Build Docker image
         shell: bash
         run: |
+          image_ref="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${{ needs.verify-tag-source.outputs.release_tag }}"
           echo "Building Docker image for tag: ${{ needs.verify-tag-source.outputs.release_tag }}"
+          echo "Resolved image ref: ${image_ref}"
           docker build \
             --target final \
             --build-arg BUILD_VERSION="${{ needs.verify-tag-source.outputs.release_tag }}" \
-            -t "${{ needs.verify-tag-source.outputs.image_ref }}" \
+            -t "${image_ref}" \
             .
 
       - name: Export Docker image
         shell: bash
         run: |
           mkdir -p docker-artifacts
-          docker save "${{ needs.verify-tag-source.outputs.image_ref }}" | gzip > docker-artifacts/docker-image.tar.gz
+          image_ref="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${{ needs.verify-tag-source.outputs.release_tag }}"
+          docker save "${image_ref}" | gzip > docker-artifacts/docker-image.tar.gz
 
       - name: Upload Docker image artifact
         uses: actions/upload-artifact@v5
@@ -174,12 +175,13 @@ jobs:
         id: push
         shell: bash
         run: |
-          docker push "${{ needs.verify-tag-source.outputs.image_ref }}"
+          image_ref="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${{ needs.verify-tag-source.outputs.release_tag }}"
+          docker push "${image_ref}"
 
-          digest="$(docker image inspect "${{ needs.verify-tag-source.outputs.image_ref }}" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
+          digest="$(docker image inspect "${image_ref}" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
 
           if [[ -z "${digest}" ]]; then
-            echo "::error::Unable to determine pushed image digest for ${{ needs.verify-tag-source.outputs.image_ref }}."
+            echo "::error::Unable to determine pushed image digest for ${image_ref}."
             exit 1
           fi
 
@@ -197,10 +199,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-artifacts
+          image_ref="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${{ needs.verify-tag-source.outputs.release_tag }}"
           cat <<EOF > release-artifacts/release-metadata.txt
           release_tag=${{ needs.verify-tag-source.outputs.release_tag }}
           commit_sha=${GITHUB_SHA}
-          docker_image=${{ needs.verify-tag-source.outputs.image_ref }}
+          docker_image=${image_ref}
           docker_digest=${{ needs.push-docker-image.outputs.image_digest }}
           source_ref=${GITHUB_REF}
           EOF
@@ -228,7 +231,7 @@ jobs:
         with:
           script: |
             const releaseTag = '${{ needs.verify-tag-source.outputs.release_tag }}';
-            const imageRef = '${{ needs.verify-tag-source.outputs.image_ref }}';
+            const imageRef = `${process.env.DOCKERHUB_USERNAME}/${process.env.IMAGE_NAME}:${releaseTag}`;
             const imageDigest = '${{ needs.push-docker-image.outputs.image_digest }}';
             const pushResult = '${{ needs.push-docker-image.result }}';
             const metadataResult = '${{ needs.publish-release-metadata.result }}';
