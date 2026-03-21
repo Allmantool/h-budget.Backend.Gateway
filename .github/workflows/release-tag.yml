@@ -15,6 +15,7 @@ concurrency:
 
 env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  IMAGE_NAME: homebudget-backend-gateway
 
 jobs:
   verify-tag-source:
@@ -22,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ steps.validate.outputs.release_tag }}
+      image_ref: ${{ steps.validate.outputs.image_ref }}
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v5
@@ -40,14 +42,12 @@ jobs:
           fi
 
           echo "release_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           echo "Validated tag ${GITHUB_REF_NAME} on commit ${GITHUB_SHA}."
 
-  package-and-deploy:
-    name: Build and Deploy Release Artifact
+  validate-application-build:
+    name: Validate Application Build
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/homebudget-backend-gateway
     needs: verify-tag-source
     defaults:
       run:
@@ -73,8 +73,17 @@ jobs:
       - name: Build solution
         run: dotnet build HomeBudgetBackendGateway.sln --no-restore --no-incremental
 
+  create-deployment:
+    name: Create GitHub Deployment
+    runs-on: ubuntu-latest
+    needs:
+      - verify-tag-source
+      - validate-application-build
+    outputs:
+      deployment_id: ${{ steps.create.outputs.deployment_id }}
+    steps:
       - name: Create deployment
-        id: create-deployment
+        id: create
         uses: actions/github-script@v7
         with:
           script: |
@@ -89,16 +98,71 @@ jobs:
               production_environment: true,
               description: `Deploying Docker image for tag ${context.ref.replace('refs/tags/', '')}`
             });
+
             core.setOutput('deployment_id', deployment.data.id.toString());
 
+  build-docker-image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs:
+      - verify-tag-source
+      - validate-application-build
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Build Docker image
+        shell: bash
         run: |
           echo "Building Docker image for tag: ${{ needs.verify-tag-source.outputs.release_tag }}"
           docker build \
             --target final \
             --build-arg BUILD_VERSION="${{ needs.verify-tag-source.outputs.release_tag }}" \
-            -t "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ needs.verify-tag-source.outputs.release_tag }}" \
+            -t "${{ needs.verify-tag-source.outputs.image_ref }}" \
             .
+
+      - name: Export Docker image
+        shell: bash
+        run: |
+          mkdir -p docker-artifacts
+          docker save "${{ needs.verify-tag-source.outputs.image_ref }}" | gzip > docker-artifacts/docker-image.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: docker-image-${{ needs.verify-tag-source.outputs.release_tag }}
+          path: docker-artifacts/docker-image.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  push-docker-image:
+    name: Push Docker Image
+    runs-on: ubuntu-latest
+    needs:
+      - verify-tag-source
+      - create-deployment
+      - build-docker-image
+    outputs:
+      image_digest: ${{ steps.push.outputs.image_digest }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: docker-image-${{ needs.verify-tag-source.outputs.release_tag }}
+          path: docker-artifacts
+
+      - name: Load Docker image
+        shell: bash
+        run: |
+          gunzip -c docker-artifacts/docker-image.tar.gz | docker load
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -107,10 +171,28 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Push Docker image
+        id: push
+        shell: bash
         run: |
-          echo "Pushing image to Docker Hub..."
-          docker push "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ needs.verify-tag-source.outputs.release_tag }}"
+          docker push "${{ needs.verify-tag-source.outputs.image_ref }}"
 
+          digest="$(docker image inspect "${{ needs.verify-tag-source.outputs.image_ref }}" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
+
+          if [[ -z "${digest}" ]]; then
+            echo "::error::Unable to determine pushed image digest for ${{ needs.verify-tag-source.outputs.image_ref }}."
+            exit 1
+          fi
+
+          echo "image_digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "Pushed digest: ${digest}"
+
+  publish-release-metadata:
+    name: Publish Release Metadata
+    runs-on: ubuntu-latest
+    needs:
+      - verify-tag-source
+      - push-docker-image
+    steps:
       - name: Create release metadata
         shell: bash
         run: |
@@ -118,38 +200,55 @@ jobs:
           cat <<EOF > release-artifacts/release-metadata.txt
           release_tag=${{ needs.verify-tag-source.outputs.release_tag }}
           commit_sha=${GITHUB_SHA}
-          docker_image=${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ needs.verify-tag-source.outputs.release_tag }}
+          docker_image=${{ needs.verify-tag-source.outputs.image_ref }}
+          docker_digest=${{ needs.push-docker-image.outputs.image_digest }}
           source_ref=${GITHUB_REF}
           EOF
 
-      - name: Publish release metadata
+      - name: Upload release metadata
         uses: actions/upload-artifact@v5
         with:
           name: release-${{ needs.verify-tag-source.outputs.release_tag }}
           path: release-artifacts/release-metadata.txt
           retention-days: 30
+          if-no-files-found: error
 
-      - name: Update deployment status - success
-        if: ${{ success() && steps.create-deployment.outputs.deployment_id != '' }}
+  finalize-deployment:
+    name: Finalize Deployment
+    runs-on: ubuntu-latest
+    if: ${{ always() && needs.create-deployment.result == 'success' }}
+    needs:
+      - verify-tag-source
+      - create-deployment
+      - push-docker-image
+      - publish-release-metadata
+    steps:
+      - name: Set deployment status
         uses: actions/github-script@v7
         with:
           script: |
-            await github.rest.repos.createDeploymentStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              deployment_id: Number('${{ steps.create-deployment.outputs.deployment_id }}'),
-              state: 'success',
-              environment_url: 'https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway'
-            });
+            const releaseTag = '${{ needs.verify-tag-source.outputs.release_tag }}';
+            const imageRef = '${{ needs.verify-tag-source.outputs.image_ref }}';
+            const imageDigest = '${{ needs.push-docker-image.outputs.image_digest }}';
+            const pushResult = '${{ needs.push-docker-image.result }}';
+            const metadataResult = '${{ needs.publish-release-metadata.result }}';
 
-      - name: Update deployment status - failure
-        if: ${{ failure() && steps.create-deployment.outputs.deployment_id != '' }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.repos.createDeploymentStatus({
+            const isSuccess = pushResult === 'success' && metadataResult === 'success';
+            const state = isSuccess ? 'success' : 'failure';
+            const description = isSuccess
+              ? `Released ${releaseTag} as ${imageRef}@${imageDigest}`
+              : `Release ${releaseTag} failed during ${pushResult !== 'success' ? 'docker push' : 'metadata publication'}`;
+
+            const payload = {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              deployment_id: Number('${{ steps.create-deployment.outputs.deployment_id }}'),
-              state: 'failure'
-            });
+              deployment_id: Number('${{ needs.create-deployment.outputs.deployment_id }}'),
+              state,
+              description
+            };
+
+            if (isSuccess) {
+              payload.environment_url = `https://hub.docker.com/r/${process.env.DOCKERHUB_USERNAME}/${process.env.IMAGE_NAME}`;
+            }
+
+            await github.rest.repos.createDeploymentStatus(payload);
