@@ -52,11 +52,14 @@ scanner_args=(
 if [[ -n "${PULL_REQUEST_ID:-}" ]]; then
     echo "Running Sonar begin for Pull Request ${PULL_REQUEST_ID}"
 
-    if [[ -f "$COVERAGE_FILE" ]]; then
+    if [[ -n "$COVERAGE_FILE" ]]; then
         scanner_args+=("/d:sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}")
-        echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
-    else
-        echo "Warning: coverage file not found at ${COVERAGE_FILE}. Sonar will run without coverage report."
+
+        if [[ -f "$COVERAGE_FILE" ]]; then
+            echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
+        else
+            echo "Coverage file is expected at ${COVERAGE_FILE}; Sonar will import it after tests generate it."
+        fi
     fi
 
     scanner_args+=(
@@ -77,11 +80,14 @@ else
         scanner_args+=("/d:sonar.branch.name=${BRANCH_NAME}")
     fi
 
-    if [[ -f "$COVERAGE_FILE" ]]; then
+    if [[ -n "$COVERAGE_FILE" ]]; then
         scanner_args+=("/d:sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}")
-        echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
-    else
-        echo "Warning: coverage file not found at ${COVERAGE_FILE}. Sonar will run without coverage report."
+
+        if [[ -f "$COVERAGE_FILE" ]]; then
+            echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
+        else
+            echo "Coverage file is expected at ${COVERAGE_FILE}; Sonar will import it after tests generate it."
+        fi
     fi
 fi
 

@@ -1,0 +1,155 @@
+name: Release Tag
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+jobs:
+  verify-tag-source:
+    name: Verify Tag Origin
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.validate.outputs.release_tag }}
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag is reachable from master
+        id: validate
+        shell: bash
+        run: |
+          git fetch origin master --depth=1
+
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/master"; then
+            echo "::error::Tag ${GITHUB_REF_NAME} points to ${GITHUB_SHA}, which is not reachable from origin/master."
+            exit 1
+          fi
+
+          echo "release_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Validated tag ${GITHUB_REF_NAME} on commit ${GITHUB_SHA}."
+
+  package-and-deploy:
+    name: Build and Deploy Release Artifact
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/homebudget-backend-gateway
+    needs: verify-tag-source
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+
+      - name: Restore .NET packages
+        run: dotnet restore HomeBudgetBackendGateway.sln
+
+      - name: Build solution
+        run: dotnet build HomeBudgetBackendGateway.sln --no-restore --no-incremental
+
+      - name: Create deployment
+        id: create-deployment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.ref,
+              auto_merge: false,
+              required_contexts: [],
+              environment: 'production',
+              transient_environment: false,
+              production_environment: true,
+              description: `Deploying Docker image for tag ${context.ref.replace('refs/tags/', '')}`
+            });
+            core.setOutput('deployment_id', deployment.data.id.toString());
+
+      - name: Build Docker image
+        run: |
+          echo "Building Docker image for tag: ${{ needs.verify-tag-source.outputs.release_tag }}"
+          docker build \
+            --target final \
+            --build-arg BUILD_VERSION="${{ needs.verify-tag-source.outputs.release_tag }}" \
+            -t "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ needs.verify-tag-source.outputs.release_tag }}" \
+            .
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push Docker image
+        run: |
+          echo "Pushing image to Docker Hub..."
+          docker push "${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ needs.verify-tag-source.outputs.release_tag }}"
+
+      - name: Create release metadata
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          cat <<EOF > release-artifacts/release-metadata.txt
+          release_tag=${{ needs.verify-tag-source.outputs.release_tag }}
+          commit_sha=${GITHUB_SHA}
+          docker_image=${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway:${{ needs.verify-tag-source.outputs.release_tag }}
+          source_ref=${GITHUB_REF}
+          EOF
+
+      - name: Publish release metadata
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-${{ needs.verify-tag-source.outputs.release_tag }}
+          path: release-artifacts/release-metadata.txt
+          retention-days: 30
+
+      - name: Update deployment status - success
+        if: ${{ success() && steps.create-deployment.outputs.deployment_id != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: Number('${{ steps.create-deployment.outputs.deployment_id }}'),
+              state: 'success',
+              environment_url: 'https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/homebudget-backend-gateway'
+            });
+
+      - name: Update deployment status - failure
+        if: ${{ failure() && steps.create-deployment.outputs.deployment_id != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: Number('${{ steps.create-deployment.outputs.deployment_id }}'),
+              state: 'failure'
+            });
