@@ -53,7 +53,7 @@ if [[ -n "${PULL_REQUEST_ID:-}" ]]; then
     echo "Running Sonar begin for Pull Request ${PULL_REQUEST_ID}"
 
     if [[ -f "$COVERAGE_FILE" ]]; then
-        scanner_args+=("/d:sonar.cs.dotcover.reportsPaths=${COVERAGE_FILE}")
+        scanner_args+=("/d:sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}")
         echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
     else
         echo "Warning: coverage file not found at ${COVERAGE_FILE}. Sonar will run without coverage report."
@@ -78,7 +78,7 @@ else
     fi
 
     if [[ -f "$COVERAGE_FILE" ]]; then
-        scanner_args+=("/d:sonar.cs.dotcover.reportsPaths=${COVERAGE_FILE}")
+        scanner_args+=("/d:sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}")
         echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
     else
         echo "Warning: coverage file not found at ${COVERAGE_FILE}. Sonar will run without coverage report."

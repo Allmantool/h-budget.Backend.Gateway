@@ -73,12 +73,6 @@ jobs:
       - name: Restore .NET packages
         run: dotnet restore HomeBudgetBackendGateway.sln
 
-      - name: Install external tools for quality gate verification
-        shell: bash
-        run: |
-          dotnet tool install --global JetBrains.dotCover.GlobalTool --version 2023.2.5
-          dotnet tool install --global dotnet-sonarscanner --version 9.0.2
-
       - name: Build solution
         shell: bash
         run: dotnet build HomeBudgetBackendGateway.sln --no-incremental
@@ -118,22 +112,35 @@ jobs:
           restore-keys: |
             dotnet-deps-
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore .NET packages
+        run: dotnet restore HomeBudgetBackendGateway.sln
+
+      - name: Install coverage tool
+        shell: bash
+        run: |
+          dotnet tool update --global dotnet-coverage --version 18.4.1 || \
+          dotnet tool install --global dotnet-coverage --version 18.4.1
+
       - name: Run tests for coverage
-        continue-on-error: true
         timeout-minutes: 15
         shell: bash
         run: |
           mkdir -p test-results
-          dotnet-dotcover test HomeBudgetBackendGateway.sln \
-            --dcReportType=XML \
-            --dcOutput="test-results/backend-gateway-coverage.xml" \
-            --dcFilters="+:HomeBudget.*;-:type=*.IntegrationTests;-:type=*.Tests"
+          dotnet-coverage collect "dotnet test HomeBudgetBackendGateway.sln --no-restore --logger trx --results-directory test-results" \
+            -f xml \
+            -o "test-results/backend-gateway-coverage.xml"
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v5
         with:
           name: coverage-report
           path: test-results/backend-gateway-coverage.xml
+          if-no-files-found: error
 
   quality-gate:
     name: Run SonarCloud Analysis
@@ -158,6 +165,26 @@ jobs:
           key: ${{ needs.build.outputs.cache-key }}
           restore-keys: |
             dotnet-deps-
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Restore .NET packages
+        run: dotnet restore HomeBudgetBackendGateway.sln
+
+      - name: Install SonarScanner
+        shell: bash
+        run: |
+          dotnet tool update --global dotnet-sonarscanner --version 9.0.2 || \
+          dotnet tool install --global dotnet-sonarscanner --version 9.0.2
 
       - name: Download coverage report
         uses: actions/download-artifact@v5
@@ -187,7 +214,7 @@ jobs:
 
       - name: Build solution for Sonar analysis
         shell: bash
-        run: dotnet build HomeBudgetBackendGateway.sln --no-incremental
+        run: dotnet build HomeBudgetBackendGateway.sln --no-incremental --no-restore
 
       - name: End Sonar scan
         env:
