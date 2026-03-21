@@ -9,7 +9,6 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.SqlClient" Version="1.15.1" />
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.21.0.135717" />
     <PackageVersion Include="IdentityModel" Version="7.0.0" />
-    <PackageVersion Include="coverlet.collector" Version="8.0.1" />
     <PackageVersion Include="FluentAssertions" Version="8.9.0" />
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
     <PackageVersion Include="Elastic.Apm.NetCoreAll" Version="1.34.1" />
