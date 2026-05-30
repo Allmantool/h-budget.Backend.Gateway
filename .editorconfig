@@ -1,8 +1,32 @@
-﻿[*.cs]
+root = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+
+csharp_prefer_braces = true:warning
+csharp_style_namespace_declarations = block_scoped:suggestion
+csharp_style_expression_bodied_methods = false:suggestion
+csharp_style_expression_bodied_constructors = false:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
+dotnet_style_predefined_type_for_member_access = true:suggestion
+dotnet_style_object_initializer = true:warning
+dotnet_style_collection_initializer = true:warning
+dotnet_style_coalesce_expression = true:warning
+dotnet_style_null_propagation = true:warning
+dotnet_style_prefer_auto_properties = true:suggestion
+dotnet_style_readonly_field = true:warning
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
 
 # SA1600: Elements should be documented
 dotnet_diagnostic.SA1600.severity = silent
-
 
 # Async methods should have "Async" suffix
 dotnet_naming_rule.async_methods_end_in_async.symbols = any_async_methods
@@ -30,3 +54,21 @@ dotnet_analyzer_diagnostic.category-StyleCop.CSharp.OrderingRules.severity = sug
 
 # Default severity for all analyzer diagnostics
 dotnet_analyzer_diagnostic.severity = silent
+
+# Clean-code quality gates. These intentionally remain warnings during the
+# repository's nullable/analyzer migration instead of globally treating
+# warnings as errors.
+dotnet_diagnostic.SA1402.severity = warning
+dotnet_diagnostic.S107.severity = warning
+dotnet_diagnostic.S134.severity = warning
+dotnet_diagnostic.S138.severity = warning
+dotnet_diagnostic.S3776.severity = warning
+dotnet_diagnostic.CA1062.severity = suggestion
+dotnet_diagnostic.CA1303.severity = suggestion
+dotnet_diagnostic.CA1802.severity = suggestion
+dotnet_diagnostic.CA1812.severity = suggestion
+dotnet_diagnostic.CA1822.severity = suggestion
+dotnet_diagnostic.CA1823.severity = suggestion
+dotnet_diagnostic.CA1848.severity = warning
+dotnet_diagnostic.CA2016.severity = warning
+dotnet_diagnostic.CA2254.severity = warning
