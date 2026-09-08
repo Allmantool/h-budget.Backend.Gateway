@@ -25,7 +25,7 @@ jobs:
       release_tag: ${{ steps.validate.outputs.release_tag }}
     steps:
       - name: Checkout tagged commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
@@ -52,12 +52,12 @@ jobs:
         working-directory: .
     steps:
       - name: Checkout tagged commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: "10.0.x"
           cache: true
@@ -82,7 +82,7 @@ jobs:
     steps:
       - name: Create deployment
         id: create
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const deployment = await github.rest.repos.createDeployment({
@@ -110,7 +110,7 @@ jobs:
         working-directory: .
     steps:
       - name: Checkout tagged commit
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
@@ -134,7 +134,7 @@ jobs:
           docker save "${image_ref}" | gzip > docker-artifacts/docker-image.tar.gz
 
       - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: docker-image-${{ needs.verify-tag-source.outputs.release_tag }}
           path: docker-artifacts/docker-image.tar.gz
@@ -155,7 +155,7 @@ jobs:
         working-directory: .
     steps:
       - name: Download Docker image artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: docker-image-${{ needs.verify-tag-source.outputs.release_tag }}
           path: docker-artifacts
@@ -166,7 +166,7 @@ jobs:
           gunzip -c docker-artifacts/docker-image.tar.gz | docker load
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -209,7 +209,7 @@ jobs:
           EOF
 
       - name: Upload release metadata
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: release-${{ needs.verify-tag-source.outputs.release_tag }}
           path: release-artifacts/release-metadata.txt
@@ -227,7 +227,7 @@ jobs:
       - publish-release-metadata
     steps:
       - name: Set deployment status
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const releaseTag = '${{ needs.verify-tag-source.outputs.release_tag }}';

@@ -68,6 +68,18 @@
     },
 
     {
+      "UpstreamPathTemplate": "/gateway/accounting/payments-history/query/{paymentAccountId}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/payments-history/query/{paymentAccountId}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
       "UpstreamPathTemplate": "/gateway/accounting/{entity}/{paymentAccountId}/byId/{operationId}",
       "UpstreamHttpMethod": [ "GET" ],
       "DownstreamPathTemplate": "/{entity}/{paymentAccountId}/byId/{operationId}",
