@@ -273,3 +273,4 @@ _Pvt_Extensions
 
 test-results/
 .dotnet/
+HomeBudget.Backend.Gateway/appsettings.Local.json

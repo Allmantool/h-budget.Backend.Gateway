@@ -1,52 +1,97 @@
-name: Update Semver
+name: Gateway Release
+run-name: Gateway release ${{ github.sha }}
 
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - master
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-release-master
+  cancel-in-progress: false
 
 jobs:
-  update-semver_if_merged:
-    if: github.event.pull_request.merged == true
+  verify:
+    name: Verify release candidate
+    uses: ./.github/workflows/ci-master.yml
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  publish:
+    name: Publish GitHub Release
     runs-on: ubuntu-latest
-
+    timeout-minutes: 20
+    needs: verify
+    permissions:
+      actions: write
+      contents: write
+    outputs:
+      release_tag: ${{ steps.publish.outputs.release_tag }}
+      release_version: ${{ steps.publish.outputs.release_version }}
+      release_sha: ${{ steps.publish.outputs.release_sha }}
     steps:
-      - name: Check out code
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Check out verified master revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
-          persist-credentials: false # Required for PAT-based push
+          persist-credentials: false
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Verify triggering revision
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ github.sha }}"
 
-      - name: Git Semantic Version
-        id: tag_version
-        uses: PaulHatch/semantic-version@a8f8f59fd7f0625188492e945240f12d7ad2dca3 # v5.4.0
+      - name: Use Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          tag_prefix: "v"
-          version_format: "${major}.${minor}.${patch}-build${increment}"
-          bump_each_commit: true
-          version_from_branch: true
-          debug: true
+          node-version: 24.10.0
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Tag Release & Push
+      - name: Install release tooling
+        run: npm ci --ignore-scripts
+
+      - id: publish
+        name: Create immutable tag and GitHub Release
         env:
-          PAT_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          TAG=${{ steps.tag_version.outputs.version_tag }}
+          set -euo pipefail
+          git tag --points-at HEAD --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort > tags-before.txt || test $? -eq 1
+          npx --no-install semantic-release
+          git fetch --tags origin
+          git tag --points-at HEAD --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort > tags-after.txt || test $? -eq 1
 
-          git tag $TAG
+          release_tag="$(comm -13 tags-before.txt tags-after.txt)"
+          if [[ -z "$release_tag" ]]; then
+            release_tag="$(sed -n '1p' tags-before.txt)"
+          fi
+          if [[ -z "$release_tag" ]]; then
+            exit 0
+          fi
+          if [[ "$release_tag" == *$'\n'* || ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid stable release tag: $release_tag" >&2
+            exit 1
+          fi
 
-          git push https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }}.git $TAG
+          release_sha="$(git rev-parse "refs/tags/$release_tag^{commit}")"
+          test "$release_sha" = "$(git rev-parse HEAD)"
+          gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null
+          {
+            echo "release_tag=$release_tag"
+            echo "release_version=${release_tag#v}"
+            echo "release_sha=$release_sha"
+          } >> "$GITHUB_OUTPUT"
 
-          echo "✅ Generated and pushed tag: $TAG"
-          echo "TAG=$TAG" >> $GITHUB_ENV
-
-      - name: Show latest tag
-        run: |
-          TAG_LATEST=$(git describe --tags $(git rev-list --tags --max-count=1))
-          echo "🔹 Latest tag in repo: $TAG_LATEST"
+      - name: Dispatch versioned deployment
+        if: ${{ steps.publish.outputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.publish.outputs.release_tag }}
+          RELEASE_SHA: ${{ steps.publish.outputs.release_sha }}
+        shell: bash
+        run: gh workflow run release-tag.yml --ref master --field release_tag="$RELEASE_TAG" --field release_sha="$RELEASE_SHA" --field redeploy=false

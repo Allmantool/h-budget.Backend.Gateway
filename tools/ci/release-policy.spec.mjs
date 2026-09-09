@@ -1,0 +1,83 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+import { analyzeCommits } from '@semantic-release/commit-analyzer';
+import { generateNotes } from '@semantic-release/release-notes-generator';
+
+import releaseConfig, { BOOTSTRAP_VERSION, isStableTag } from '../../release.config.mjs';
+import { classifyReleaseType, validatePullRequest } from './release-policy.mjs';
+
+const semanticReleaseConfig = releaseConfig.plugins[0][1];
+const silentLogger = { log() {} };
+
+async function analyze(messages) {
+  return analyzeCommits(semanticReleaseConfig, {
+    commits: messages.map((message, index) => ({ hash: `synthetic-${index}`, message })),
+    cwd: process.cwd(),
+    logger: silentLogger,
+  });
+}
+
+test('classifies patch, minor, and major release rules', async () => {
+  for (const [message, expected] of [
+    ['fix(gateway): correct route timeout', 'patch'],
+    ['feat(gateway): add accounting route', 'minor'],
+    ['feat(gateway)!: remove legacy route', 'major'],
+    ['fix(gateway): correct route\n\nBREAKING CHANGE: legacy contract was removed', 'major'],
+  ]) {
+    assert.equal(classifyReleaseType([message]), expected);
+    assert.equal(await analyze([message]), expected);
+  }
+});
+
+test('selects the highest impact and excludes no-release changes', async () => {
+  assert.equal(classifyReleaseType(['fix(gateway): correct route', 'feat(gateway): add route']), 'minor');
+  assert.equal(await analyze(['fix(gateway): correct route', 'feat(gateway): add route']), 'minor');
+  assert.equal(classifyReleaseType(['docs: update runbook', 'test(gateway): add route test', 'style: format']), undefined);
+  assert.equal(await analyze(['docs: update runbook', 'test(gateway): add route test', 'style: format']), null);
+});
+
+test('validates branch intent without calculating versions from branches', () => {
+  assert.equal(validatePullRequest('feature/new-route', 'feat(gateway): add new route'), undefined);
+  assert.equal(validatePullRequest('hotfix/route-timeout', 'fix(gateway): correct route timeout'), undefined);
+  assert.equal(validatePullRequest('tech/release-contract', 'ci(release): harden tag validation'), undefined);
+  assert.match(validatePullRequest('feature/new-route', 'fix(gateway): correct route'), /does not allow/);
+  assert.match(validatePullRequest('unsupported/new-route', 'feat(gateway): add route'), /Unsupported branch name/);
+});
+
+test('defines stable tag, bootstrap, and release workflow invariants', async () => {
+  assert.equal(BOOTSTRAP_VERSION, '1.0.0');
+  assert.equal(isStableTag('v1.2.3'), true);
+  assert.equal(isStableTag('v0.0.794-build1'), false);
+  assert.equal(isStableTag('v1.2.3-rc.1'), false);
+  assert.deepEqual(releaseConfig.branches, ['master']);
+  assert.equal(releaseConfig.tagFormat, 'v${version}');
+  const [policy, release, deployment] = await Promise.all([
+    readFile(new URL('../../.github/workflows/ci-master.yml', import.meta.url), 'utf8'),
+    readFile(new URL('../../.github/workflows/update_semver.yml', import.meta.url), 'utf8'),
+    readFile(new URL('../../.github/workflows/release-tag.yml', import.meta.url), 'utf8'),
+  ]);
+  assert.match(policy, /Gateway PR Gate/);
+  assert.match(policy, /contents: read/);
+  assert.doesNotMatch(policy, /contents: write|git tag|gh release/);
+  assert.match(release, /group: gateway-release-master/);
+  assert.match(release, /npx --no-install semantic-release/);
+  assert.doesNotMatch(release, /git push --force|git tag -f/);
+  assert.match(deployment, /BUILD_VERSION=\$\{\{ needs\.verify-release\.outputs\.release_version \}\}/);
+  assert.match(deployment, /BUILD_SHA=\$\{\{ needs\.verify-release\.outputs\.release_sha \}\}/);
+  assert.match(deployment, /org\.opencontainers\.image\.revision/);
+});
+
+test('generates categorized release notes', async () => {
+  const [, notesConfig] = releaseConfig.plugins[1];
+  const notes = await generateNotes(notesConfig, {
+    commits: [{ hash: 'synthetic', message: 'ci(release): harden production pipeline' }],
+    lastRelease: { gitTag: 'v1.2.2' },
+    nextRelease: { gitTag: 'v1.2.3', version: '1.2.3' },
+    options: { repositoryUrl: 'https://github.com/Allmantool/h-budget.Backend.Gateway.git' },
+    cwd: process.cwd(),
+  });
+  assert.match(notes, /Continuous Integration/);
+  assert.match(notes, /harden production pipeline/);
+});
