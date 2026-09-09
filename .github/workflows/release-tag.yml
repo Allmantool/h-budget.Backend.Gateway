@@ -2,6 +2,33 @@ name: Gateway Deployment
 run-name: ${{ inputs.redeploy && 'Redeploy' || 'Deploy' }} ${{ inputs.release_tag }}
 
 on:
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+      release_sha:
+        required: true
+        type: string
+      redeploy:
+        required: true
+        type: boolean
+      release_decision:
+        required: false
+        type: string
+      release_type:
+        required: false
+        type: string
+      previous_version:
+        required: false
+        type: string
+    outputs:
+      final_outcome:
+        value: ${{ jobs.delivery-result.outputs.final_outcome }}
+      image_digest:
+        value: ${{ jobs.delivery-result.outputs.image_digest }}
+      deployment_id:
+        value: ${{ jobs.delivery-result.outputs.deployment_id }}
   workflow_dispatch:
     inputs:
       release_tag:
@@ -26,13 +53,32 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GATEWAY_IMAGE_NAME: homebudget-backend-gateway
+  GATEWAY_IMAGE_REPOSITORY: allmantool/homebudget-backend-gateway
 
 jobs:
+  publication-preflight:
+    name: Confirm publication authorization
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require explicit publication enablement
+        env:
+          PUBLICATION_ENABLED: ${{ vars.GATEWAY_PUBLICATION_ENABLED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLICATION_ENABLED" != 'true' ]]; then
+            echo '## Gateway delivery: HELD' >> "$GITHUB_STEP_SUMMARY"
+            echo 'GATEWAY_PUBLICATION_ENABLED is not true. This operation will not publish an image or finalize a release.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo '## Gateway delivery: authorized' >> "$GITHUB_STEP_SUMMARY"
+
   verify-release:
     name: Verify release identity
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: publication-preflight
     outputs:
       release_tag: ${{ steps.release.outputs.release_tag }}
       release_version: ${{ steps.release.outputs.release_version }}
@@ -96,10 +142,10 @@ jobs:
             BUILD_VERSION=${{ needs.verify-release.outputs.release_version }}
             BUILD_SHA=${{ needs.verify-release.outputs.release_sha }}
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}:${{ needs.verify-release.outputs.release_version }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}:sha-${{ needs.verify-release.outputs.release_sha }}
+            ${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}
+            ${{ env.GATEWAY_IMAGE_REPOSITORY }}:sha-${{ needs.verify-release.outputs.release_sha }}
           labels: |
-            org.opencontainers.image.title=${{ env.GATEWAY_IMAGE_NAME }}
+            org.opencontainers.image.title=homebudget-backend-gateway
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.verify-release.outputs.release_sha }}
             org.opencontainers.image.version=${{ needs.verify-release.outputs.release_version }}
@@ -119,14 +165,16 @@ jobs:
         run: |
           chmod +x tools/ci/container-smoke.sh
           docker load --input /tmp/gateway-image.tar
-          tools/ci/container-smoke.sh --image "${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}:${{ needs.verify-release.outputs.release_version }}" --mode success
-          tools/ci/container-smoke.sh --image "${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}:${{ needs.verify-release.outputs.release_version }}" --mode invalid-config
+          tools/ci/container-smoke.sh --image "${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}" --mode success
+          tools/ci/container-smoke.sh --image "${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}" --mode invalid-config
 
   push-image:
-    name: Publish Gateway image
+    name: Publish Gateway v${{ needs.verify-release.outputs.release_version }} to Docker Hub
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [verify-release, build-image]
+    environment:
+      name: production
     outputs:
       image_ref: ${{ steps.publish.outputs.image_ref }}
       image_digest: ${{ steps.publish.outputs.image_digest }}
@@ -150,7 +198,7 @@ jobs:
         name: Validate and publish immutable image tags
         shell: bash
         env:
-          IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}
+          IMAGE_NAME: ${{ env.GATEWAY_IMAGE_REPOSITORY }}
           RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
           RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
         run: |
@@ -200,13 +248,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   record-deployment:
-    name: Record release traceability
+    name: Finalize GitHub Release v${{ needs.verify-release.outputs.release_version }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: ${{ always() }}
     needs: [verify-release, build-image, push-image]
-    environment:
-      name: production
     permissions:
       contents: write
     steps:
@@ -254,3 +300,111 @@ jobs:
       - name: Fail when a mandatory release stage failed
         if: ${{ needs.verify-release.result != 'success' || needs.push-image.result != 'success' }}
         run: exit 1
+
+  delivery-result:
+    name: Verify Gateway v${{ needs.verify-release.outputs.release_version }} publication
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [publication-preflight, verify-release, build-image, push-image, record-deployment]
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      final_outcome: ${{ steps.report.outputs.final_outcome }}
+      image_digest: ${{ steps.report.outputs.image_digest }}
+      deployment_id: ${{ steps.report.outputs.deployment_id }}
+    steps:
+      - id: report
+        name: Read back release, registry, and environment evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREFLIGHT_RESULT: ${{ needs.publication-preflight.result }}
+          VERIFY_RESULT: ${{ needs.verify-release.result }}
+          BUILD_RESULT: ${{ needs.build-image.result }}
+          PUBLISH_RESULT: ${{ needs.push-image.result }}
+          FINALIZE_RESULT: ${{ needs.record-deployment.result }}
+          RELEASE_TAG: ${{ needs.verify-release.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
+          RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
+          IMAGE_REF: ${{ needs.push-image.outputs.image_ref }}
+          IMAGE_DIGEST: ${{ needs.push-image.outputs.image_digest }}
+          PUBLICATION_ENABLED: ${{ vars.GATEWAY_PUBLICATION_ENABLED }}
+          RELEASE_DECISION: ${{ inputs.release_decision }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          final_outcome='FAILED'
+          reason='A mandatory delivery stage did not succeed.'
+          deployment_id=''
+          deployment_status=''
+          release_id=''
+          release_state=''
+          verify_remote() {
+            test -n "$RELEASE_TAG"
+            test -n "$RELEASE_SHA"
+            test -n "$IMAGE_DIGEST"
+            release_info="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json databaseId,isDraft)"
+            jq -e '.isDraft == false' <<< "$release_info" >/dev/null
+            release_id="$(jq -r '.databaseId' <<< "$release_info")"
+            release_state='final'
+            deployment_id="$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=production&sha=$RELEASE_SHA&per_page=100" --jq '[.[] | select(.environment == "production") | .id] | .[0] // empty')"
+            test -n "$deployment_id"
+            deployment_status="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses?per_page=1" --jq '.[0].state // empty')"
+            test "$deployment_status" = success
+          }
+          if [[ "$PREFLIGHT_RESULT" == 'success' && "$VERIFY_RESULT" == 'success' && "$BUILD_RESULT" == 'success' && "$PUBLISH_RESULT" == 'success' && "$FINALIZE_RESULT" == 'success' ]]; then
+            if verify_remote; then
+              final_outcome='PUBLISHED'
+              reason='Immutable release, matching registry tags, and production registry-publication record were read back successfully.'
+            else
+              reason='A required remote release, registry, or Environment readback failed.'
+            fi
+          elif [[ "$PREFLIGHT_RESULT" == 'failure' ]]; then
+            final_outcome='HELD'
+            reason='GATEWAY_PUBLICATION_ENABLED is not true.'
+          fi
+          jq -n \
+            --arg sourceSha "$RELEASE_SHA" \
+            --arg workflowSha "$GITHUB_SHA" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg previousVersion "$PREVIOUS_VERSION" \
+            --arg releaseType "$RELEASE_TYPE" \
+            --arg decision "$RELEASE_DECISION" \
+            --arg publicationEnabled "$PUBLICATION_ENABLED" \
+            --arg reason "$reason" \
+            --arg gitTag "$RELEASE_TAG" \
+            --arg version "$RELEASE_VERSION" \
+            --arg releaseId "$release_id" \
+            --arg releaseState "$release_state" \
+            --arg imageRepository "$IMAGE_REF" \
+            --arg imageDigest "$IMAGE_DIGEST" \
+            --arg environment production \
+            --arg operationKind registry-publication \
+            --arg deploymentId "$deployment_id" \
+            --arg deploymentStatus "$deployment_status" \
+            --arg finalOutcome "$final_outcome" \
+            --arg qualification "$VERIFY_RESULT" \
+            --arg build "$BUILD_RESULT" \
+            --arg registryPublication "$PUBLISH_RESULT" \
+            --arg releaseFinalization "$FINALIZE_RESULT" \
+            '{sourceSha: $sourceSha, workflowSha: $workflowSha, runId: $runId, runAttempt: $runAttempt, previousVersion: $previousVersion, releaseType: $releaseType, version: $version, gitTag: $gitTag, publicationEnabled: $publicationEnabled, decision: $decision, reason: $reason, releaseId: $releaseId, releaseState: $releaseState, imageRepository: $imageRepository, imageDigest: $imageDigest, environment: $environment, operationKind: $operationKind, deploymentId: $deploymentId, deploymentStatus: $deploymentStatus, verification: {qualification: $qualification, build: $build, registryPublication: $registryPublication, releaseFinalization: $releaseFinalization}, finalOutcome: $finalOutcome}' > delivery-report.json
+          {
+            echo "final_outcome=$final_outcome"
+            echo "image_digest=$IMAGE_DIGEST"
+            echo "deployment_id=$deployment_id"
+          } >> "$GITHUB_OUTPUT"
+          cat delivery-report.json >> "$GITHUB_STEP_SUMMARY"
+          test "$final_outcome" = PUBLISHED
+
+      - name: Upload machine-readable delivery report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: gateway-delivery-${{ inputs.release_tag }}
+          path: delivery-report.json
+          retention-days: 30
+          if-no-files-found: warn

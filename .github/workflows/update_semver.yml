@@ -19,16 +19,42 @@ jobs:
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+  publication-decision:
+    name: Decide publication eligibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      publication_enabled: ${{ steps.decision.outputs.publication_enabled }}
+    steps:
+      - id: decision
+        name: Evaluate repository publication control
+        env:
+          PUBLICATION_ENABLED: ${{ vars.GATEWAY_PUBLICATION_ENABLED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLICATION_ENABLED" == 'true' ]]; then
+            echo 'publication_enabled=true' >> "$GITHUB_OUTPUT"
+            echo '## Gateway delivery: READY' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Publication is explicitly enabled by the repository-level GATEWAY_PUBLICATION_ENABLED variable.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'publication_enabled=false' >> "$GITHUB_OUTPUT"
+            echo '## Gateway delivery: HELD' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Publication is disabled. No tag, GitHub Release, registry image, or environment operation will be attempted.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   publish:
     name: Publish GitHub Release
-    if: ${{ vars.GATEWAY_PUBLICATION_ENABLED == 'true' }}
+    if: ${{ needs.verify.result == 'success' && needs.publication-decision.outputs.publication_enabled == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: verify
+    needs: [verify, publication-decision]
     permissions:
-      actions: write
       contents: write
     outputs:
+      decision: ${{ steps.publish.outputs.decision }}
+      release_type: ${{ steps.publish.outputs.release_type }}
+      previous_version: ${{ steps.publish.outputs.previous_version }}
       release_tag: ${{ steps.publish.outputs.release_tag }}
       release_version: ${{ steps.publish.outputs.release_version }}
       release_sha: ${{ steps.publish.outputs.release_sha }}
@@ -62,37 +88,107 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git tag --points-at HEAD --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort > tags-before.txt || test $? -eq 1
+          decision_file="$RUNNER_TEMP/gateway-release-decision.json"
+          rm -f "$decision_file"
+          export GATEWAY_RELEASE_DECISION_FILE="$decision_file"
+          git tag --points-at HEAD --list 'v*' | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+\$" | sort > tags-before.txt || test $? -eq 1
           npx --no-install semantic-release
           git fetch --tags origin
-          git tag --points-at HEAD --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort > tags-after.txt || test $? -eq 1
+          git tag --points-at HEAD --list 'v*' | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+\$" | sort > tags-after.txt || test $? -eq 1
 
-          release_tag="$(comm -13 tags-before.txt tags-after.txt)"
-          if [[ -z "$release_tag" ]]; then
-            release_tag="$(sed -n '1p' tags-before.txt)"
+          created_tag="$(comm -13 tags-before.txt tags-after.txt)"
+          recovery_tag=''
+          if [[ -z "$created_tag" ]]; then
+            candidate_tag="$(sed -n '1p' tags-before.txt)"
+            if [[ -n "$candidate_tag" ]] && gh release view "$candidate_tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -qx true; then
+              recovery_tag="$candidate_tag"
+            fi
           fi
-          if [[ -z "$release_tag" ]]; then
-            exit 0
+          test -f "$decision_file"
+          decision="$(node tools/ci/release-decision.mjs "$decision_file" "$recovery_tag" "$(git rev-parse HEAD)")"
+          release_tag="$(jq -r '.gitTag // empty' <<< "$decision")"
+          if [[ -n "$created_tag" ]] && [[ "$release_tag" != "$created_tag" ]]; then
+            echo 'semantic-release created a tag without a matching lifecycle decision record.' >&2
+            exit 1
           fi
           if [[ "$release_tag" == *$'\n'* || ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid stable release tag: $release_tag" >&2
-            exit 1
+            if [[ -n "$release_tag" ]]; then
+              echo "Invalid stable release tag: $release_tag" >&2
+              exit 1
+            fi
+            {
+              echo "decision=$(jq -r '.decision' <<< "$decision")"
+              echo "release_type=$(jq -r '.releaseType // empty' <<< "$decision")"
+              echo "previous_version=$(jq -r '.previousVersion // empty' <<< "$decision")"
+            } >> "$GITHUB_OUTPUT"
+            printf '## Gateway release decision: %s\n\n%s\n' "$(jq -r '.decision' <<< "$decision")" "$(jq -r '.reason' <<< "$decision")" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
           release_sha="$(git rev-parse "refs/tags/$release_tag^{commit}")"
           test "$release_sha" = "$(git rev-parse HEAD)"
           gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null
           {
+            echo "decision=$(jq -r '.decision' <<< "$decision")"
+            echo "release_type=$(jq -r '.releaseType // empty' <<< "$decision")"
+            echo "previous_version=$(jq -r '.previousVersion // empty' <<< "$decision")"
             echo "release_tag=$release_tag"
             echo "release_version=${release_tag#v}"
             echo "release_sha=$release_sha"
           } >> "$GITHUB_OUTPUT"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Gateway release decision: $(jq -r '.decision' <<< "$decision")
 
-      - name: Dispatch versioned deployment
-        if: ${{ steps.publish.outputs.release_tag != '' }}
+          $(jq -r '.reason' <<< "$decision")
+
+          - Previous version: \`$(jq -r '.previousVersion // "none"' <<< "$decision")\`
+          - Tag: \`$release_tag\`
+          - Source SHA: \`$release_sha\`
+          EOF
+
+  deliver:
+    name: Deliver Gateway v${{ needs.publish.outputs.release_version }}
+    if: ${{ needs.publish.result == 'success' && needs.publish.outputs.release_tag != '' }}
+    needs: publish
+    permissions:
+      contents: write
+      deployments: read
+    uses: ./.github/workflows/release-tag.yml
+    with:
+      release_tag: ${{ needs.publish.outputs.release_tag }}
+      release_sha: ${{ needs.publish.outputs.release_sha }}
+      redeploy: false
+      release_decision: ${{ needs.publish.outputs.decision }}
+      release_type: ${{ needs.publish.outputs.release_type }}
+      previous_version: ${{ needs.publish.outputs.previous_version }}
+    secrets: inherit
+
+  delivery-result:
+    name: Report Gateway delivery result
+    if: ${{ always() }}
+    needs: [verify, publication-decision, publish, deliver]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out release reporting scripts
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Evaluate final delivery result
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.publish.outputs.release_tag }}
-          RELEASE_SHA: ${{ steps.publish.outputs.release_sha }}
+          PUBLICATION_ENABLED: ${{ needs.publication-decision.outputs.publication_enabled }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
+          DELIVERY_RESULT: ${{ needs.deliver.result }}
         shell: bash
-        run: gh workflow run release-tag.yml --ref master --field release_tag="$RELEASE_TAG" --field release_sha="$RELEASE_SHA" --field redeploy=false
+        run: |
+          set -euo pipefail
+          evidence="$(jq -cn --arg verifyResult "$VERIFY_RESULT" --arg publicationEnabled "$PUBLICATION_ENABLED" --arg publishResult "$PUBLISH_RESULT" --arg gitTag "$RELEASE_TAG" --arg deliveryResult "$DELIVERY_RESULT" '{verifyResult: $verifyResult, publicationEnabled: $publicationEnabled, publishResult: $publishResult, gitTag: $gitTag, deliveryResult: $deliveryResult}')"
+          result="$(DELIVERY_EVIDENCE="$evidence" node tools/ci/delivery-result.mjs)"
+          printf '## Gateway final delivery: %s\n\n%s\n' "$(jq -r '.finalOutcome' <<< "$result")" "$(jq -r '.reason' <<< "$result")" >> "$GITHUB_STEP_SUMMARY"
+          case "$(jq -r '.finalOutcome' <<< "$result")" in
+            HELD|NO_RELEASE|PUBLISHED) ;;
+            *) exit 1 ;;
+          esac

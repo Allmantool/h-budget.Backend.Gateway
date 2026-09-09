@@ -37,5 +37,6 @@ export default {
         releasedLabels: false,
       },
     ],
+    './tools/ci/release-observer.mjs',
   ],
 };

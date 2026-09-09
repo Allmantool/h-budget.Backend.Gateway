@@ -62,9 +62,16 @@ test('defines stable tag, bootstrap, and release workflow invariants', async () 
   assert.match(policy, /contents: read/);
   assert.doesNotMatch(policy, /contents: write|git tag|gh release/);
   assert.match(release, /group: gateway-release-master/);
-  assert.match(release, /GATEWAY_PUBLICATION_ENABLED == 'true'/);
+  assert.match(release, /vars\.GATEWAY_PUBLICATION_ENABLED/);
+  assert.match(release, /Gateway delivery: HELD/);
+  assert.match(release, /uses: \.\/\.github\/workflows\/release-tag\.yml/);
+  assert.doesNotMatch(release, /gh workflow run/);
   assert.match(release, /npx --no-install semantic-release/);
   assert.doesNotMatch(release, /git push --force|git tag -f/);
+  assert.match(deployment, /workflow_call/);
+  assert.match(deployment, /GATEWAY_IMAGE_REPOSITORY: allmantool\/homebudget-backend-gateway/);
+  assert.match(deployment, /environment:\s+name: production/);
+  assert.match(deployment, /delivery-report\.json/);
   assert.match(deployment, /BUILD_VERSION=\$\{\{ needs\.verify-release\.outputs\.release_version \}\}/);
   assert.match(deployment, /BUILD_SHA=\$\{\{ needs\.verify-release\.outputs\.release_sha \}\}/);
   assert.match(deployment, /org\.opencontainers\.image\.revision/);
