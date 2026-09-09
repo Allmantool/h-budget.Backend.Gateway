@@ -62,6 +62,7 @@ test('defines stable tag, bootstrap, and release workflow invariants', async () 
   assert.match(policy, /contents: read/);
   assert.doesNotMatch(policy, /contents: write|git tag|gh release/);
   assert.match(release, /group: gateway-release-master/);
+  assert.match(release, /GATEWAY_PUBLICATION_ENABLED == 'true'/);
   assert.match(release, /npx --no-install semantic-release/);
   assert.doesNotMatch(release, /git push --force|git tag -f/);
   assert.match(deployment, /BUILD_VERSION=\$\{\{ needs\.verify-release\.outputs\.release_version \}\}/);

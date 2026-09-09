@@ -21,6 +21,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
+    if: ${{ vars.GATEWAY_PUBLICATION_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: verify

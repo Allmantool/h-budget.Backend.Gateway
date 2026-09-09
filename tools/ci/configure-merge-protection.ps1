@@ -2,7 +2,8 @@
 param(
     [ValidateSet('Inspect', 'Apply')]
     [string]$Mode = 'Inspect',
-    [string]$Repository = 'Allmantool/h-budget.Backend.Gateway'
+    [string]$Repository = 'Allmantool/h-budget.Backend.Gateway',
+    [string]$CheckReference = 'master'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,9 +15,20 @@ function Get-GhJson([string]$Endpoint) {
     return $output | ConvertFrom-Json
 }
 
+function Try-Get-GhJson([string]$Endpoint) {
+    $output = & gh api $Endpoint 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    return $output | ConvertFrom-Json
+}
+
 Write-Host "Repository: $Repository"
 Write-Host 'Effective rules for master:'
-Get-GhJson "repos/$Repository/rules/branches/master" | ConvertTo-Json -Depth 20
+$effectiveRules = Try-Get-GhJson "repos/$Repository/rules/branches/master"
+if ($null -eq $effectiveRules) {
+    Write-Host 'No effective master branch rules are configured.'
+} else {
+    $effectiveRules | ConvertTo-Json -Depth 20
+}
 Write-Host 'Repository and inherited rulesets:'
 $rulesets = Get-GhJson "repos/$Repository/rulesets?includes_parents=true"
 $rulesets | ConvertTo-Json -Depth 20
@@ -28,19 +40,19 @@ try {
     Write-Host 'No classic master branch-protection object is configured.'
 }
 
-$checkRuns = Get-GhJson "repos/$Repository/commits/master/check-runs?per_page=100"
-$gate = @($checkRuns.check_runs | Where-Object { $_.name -eq 'Gateway PR Gate' } | Select-Object -First 1)
+$checkRuns = Get-GhJson "repos/$Repository/commits/$CheckReference/check-runs?per_page=100"
+$gate = @($checkRuns.check_runs | Where-Object { $_.name -eq 'Gateway PR Gate' -and $_.conclusion -eq 'success' -and $_.app.id } | Select-Object -First 1)
 if ($Mode -eq 'Inspect') {
     if ($gate.Count -eq 0) {
-        Write-Host 'Gateway PR Gate has not emitted a check run on master. Do not activate a required check yet.'
+        Write-Host "No successful Gateway PR Gate check was observed on '$CheckReference'. Do not activate a required check yet."
     } else {
-        Write-Host "Observed Gateway PR Gate publisher integration id: $($gate[0].app.id)"
+        Write-Host "Observed successful Gateway PR Gate publisher integration id on '$CheckReference': $($gate[0].app.id)"
     }
     return
 }
 
 if ($gate.Count -ne 1 -or -not $gate[0].app.id) {
-    throw 'Refusing to apply protection: first push the workflow, observe a successful Gateway PR Gate check run, then rerun this script.'
+    throw "Refusing to apply protection: observe a successful Gateway PR Gate check run on '$CheckReference', then rerun this script."
 }
 
 if (@($rulesets | Where-Object { $_.name -eq $rulesetName }).Count -gt 0) {

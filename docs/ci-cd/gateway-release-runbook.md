@@ -2,10 +2,11 @@
 
 ## Normal path
 
-1. Open a PR to `master` and obtain `Gateway PR Gate` for the current merge candidate.
-2. Merge through the active ruleset. `Gateway Release` repeats verification on the resulting SHA.
-3. Semantic-release may create one immutable tag and a **draft** GitHub Release, then dispatches `Gateway Deployment` with that exact tag and SHA.
-4. Deployment builds, smoke-tests, scans, and publishes the exact candidate as SemVer and SHA tags; it verifies the digest, writes trace metadata, then publishes the GitHub Release.
+1. Keep `GATEWAY_PUBLICATION_ENABLED` unset or other than `true` until an owner has completed the activation ledger. `Gateway Release` verifies the merged SHA but does not publish while the variable is absent or false.
+2. Open a PR to `master` and obtain `Gateway PR Gate` for the current merge candidate.
+3. Merge through the active ruleset. `Gateway Release` repeats verification on the resulting SHA.
+4. Semantic-release may create one immutable tag and a **draft** GitHub Release, then dispatches `Gateway Deployment` with that exact tag and SHA.
+5. Deployment builds, smoke-tests, scans, and publishes the exact candidate as SemVer and SHA tags; it verifies the digest, writes trace metadata, then publishes the GitHub Release.
 
 Only a non-draft Release with the traceability block is deployable handoff. Publishing is not production rollout. Deploy by recorded digest and roll back by deploying a previously recorded digest; never move a release tag.
 
