@@ -67,6 +67,10 @@ jobs:
     name: Verify release identity
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Draft releases are visible only to a token with release-management access.
+    # Keep this scope on the trusted delivery verifier rather than the workflow.
+    permissions:
+      contents: write
     outputs:
       release_tag: ${{ steps.release.outputs.release_tag }}
       release_version: ${{ steps.release.outputs.release_version }}
@@ -100,7 +104,10 @@ jobs:
           git merge-base --is-ancestor "$release_sha" origin/master
           response_file="$RUNNER_TEMP/github-release-response.txt"
           if ! gh api -i "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$response_file"; then
-            awk '/^HTTP\/|^[Xx]-[Gg]ithub-[Rr]equest-[Ii]d:|"message"|"status"/' "$response_file" >&2 || true
+            awk '/^HTTP\/|^[Xx]-[Gg]ithub-[Rr]equest-[Ii]d:|^[Xx]-[Aa]ccepted-[Gg]ithub-[Pp]ermissions:|"message"|"status"/' "$response_file" >&2 || true
+            if grep -q '^HTTP/.* 403 ' "$response_file"; then
+              echo "GitHub Release API access was denied; this is not a missing release." >&2
+            fi
             echo "Unable to read GitHub Release ID $RELEASE_ID for $RELEASE_TAG." >&2
             exit 1
           fi
