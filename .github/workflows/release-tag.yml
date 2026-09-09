@@ -32,6 +32,8 @@ on:
         value: ${{ jobs.delivery-result.outputs.image_digest }}
       deployment_id:
         value: ${{ jobs.delivery-result.outputs.deployment_id }}
+      traceability_outcome:
+        value: ${{ jobs.publication-report.outputs.traceability_outcome }}
   workflow_dispatch:
     inputs:
       release_tag:
@@ -182,7 +184,6 @@ jobs:
     environment:
       name: production
     outputs:
-      image_ref: ${{ steps.publish.outputs.image_ref }}
       image_digest: ${{ steps.publish.outputs.image_digest }}
     steps:
       - name: Download Gateway image artifact
@@ -249,7 +250,6 @@ jobs:
           sha_digest="$(docker image inspect "$sha_ref" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
           test "$digest" = "$sha_digest"
           {
-            echo "image_ref=$version_ref"
             echo "image_digest=$digest"
           } >> "$GITHUB_OUTPUT"
 
@@ -270,7 +270,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
           RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
           RELEASE_ID: ${{ needs.verify-release.outputs.release_id }}
-          IMAGE_REF: ${{ needs.push-image.outputs.image_ref }}
+          IMAGE_REF: ${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}
           IMAGE_DIGEST: ${{ needs.push-image.outputs.image_digest }}
         run: |
           set -euo pipefail
@@ -283,11 +283,12 @@ jobs:
           cat >> updated-release-notes.md <<EOF
 
           <!-- gateway-release-trace:start -->
-          ## Gateway deployment traceability
+          ## Gateway publication traceability
 
           - Commit: \`$RELEASE_SHA\`
-          - Environment: \`production\`
-          - Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          - Publication: Docker Hub registry publication
+          - Environment: [production registry publication]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/deployments/activity_log?environment=production)
+          - Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT
           - Image: \`$IMAGE_REF@$IMAGE_DIGEST\`
           <!-- gateway-release-trace:end -->
           EOF
@@ -303,7 +304,7 @@ jobs:
           if-no-files-found: error
 
   delivery-result:
-    name: Verify Gateway ${{ needs.verify-release.outputs.release_tag || inputs.release_tag }} publication
+    name: Report Gateway ${{ needs.verify-release.outputs.release_tag || inputs.release_tag }} publication
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -328,7 +329,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
           RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
           RELEASE_ID: ${{ needs.verify-release.outputs.release_id }}
-          IMAGE_REF: ${{ needs.push-image.outputs.image_ref }}
+          IMAGE_REPOSITORY: ${{ env.GATEWAY_IMAGE_REPOSITORY }}
           IMAGE_DIGEST: ${{ needs.push-image.outputs.image_digest }}
           RELEASE_DECISION: ${{ inputs.release_decision }}
           RELEASE_TYPE: ${{ inputs.release_type }}
@@ -342,7 +343,15 @@ jobs:
           deployment_status=''
           release_id=''
           release_state=''
+          release_url=''
+          release_published_at=''
           release_id_input="${RELEASE_ID:-}"
+          image_version_tag="${IMAGE_REPOSITORY}:${RELEASE_VERSION:-}"
+          image_sha_tag="${IMAGE_REPOSITORY}:sha-${RELEASE_SHA:-}"
+          image_digest_reference="${IMAGE_REPOSITORY}@${IMAGE_DIGEST:-}"
+          workflow_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
+          source_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$RELEASE_SHA"
+          environment_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/deployments/activity_log?environment=production"
           verify_remote() {
             test -n "$RELEASE_TAG"
             test -n "$RELEASE_SHA"
@@ -350,6 +359,8 @@ jobs:
             test -n "$IMAGE_DIGEST"
             release_info="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id_input")"
             jq -e --argjson releaseId "$release_id_input" --arg releaseTag "$RELEASE_TAG" '.id == $releaseId and .tag_name == $releaseTag and .draft == false' <<< "$release_info" >/dev/null
+            release_url="$(jq -er '.html_url' <<< "$release_info")"
+            release_published_at="$(jq -er '.published_at' <<< "$release_info")"
             release_id="$release_id_input"
             release_state='final'
             deployment_id="$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=production&sha=$RELEASE_SHA&per_page=100" --jq '[.[] | select(.environment == "production") | .id] | .[0] // empty')"
@@ -378,7 +389,15 @@ jobs:
             --arg version "$RELEASE_VERSION" \
             --arg releaseId "$release_id" \
             --arg releaseState "$release_state" \
-            --arg imageRepository "$IMAGE_REF" \
+            --arg releaseUrl "$release_url" \
+            --arg releasePublishedAt "$release_published_at" \
+            --arg sourceUrl "$source_url" \
+            --arg workflowUrl "$workflow_url" \
+            --arg environmentUrl "$environment_url" \
+            --arg imageRepository "$IMAGE_REPOSITORY" \
+            --arg imageVersionTag "$image_version_tag" \
+            --arg imageShaTag "$image_sha_tag" \
+            --arg imageDigestReference "$image_digest_reference" \
             --arg imageDigest "$IMAGE_DIGEST" \
             --arg environment production \
             --arg operationKind registry-publication \
@@ -389,7 +408,7 @@ jobs:
             --arg build "$BUILD_RESULT" \
             --arg registryPublication "$PUBLISH_RESULT" \
             --arg releaseFinalization "$FINALIZE_RESULT" \
-            '{sourceSha: $sourceSha, workflowSha: $workflowSha, runId: $runId, runAttempt: $runAttempt, previousVersion: $previousVersion, releaseType: $releaseType, version: $version, gitTag: $gitTag, decision: $decision, reason: $reason, releaseId: $releaseId, releaseState: $releaseState, imageRepository: $imageRepository, imageDigest: $imageDigest, environment: $environment, operationKind: $operationKind, deploymentId: $deploymentId, deploymentStatus: $deploymentStatus, verification: {qualification: $qualification, build: $build, registryPublication: $registryPublication, releaseFinalization: $releaseFinalization}, finalOutcome: $finalOutcome}' > delivery-report.json
+            '{sourceSha: $sourceSha, workflowSha: $workflowSha, runId: $runId, runAttempt: $runAttempt, previousVersion: $previousVersion, releaseType: $releaseType, version: $version, gitTag: $gitTag, decision: $decision, reason: $reason, releaseId: $releaseId, releaseState: $releaseState, releaseUrl: $releaseUrl, releasePublishedAt: $releasePublishedAt, sourceUrl: $sourceUrl, workflowUrl: $workflowUrl, environmentUrl: $environmentUrl, imageRepository: $imageRepository, imageVersionTag: $imageVersionTag, imageShaTag: $imageShaTag, imageDigestReference: $imageDigestReference, imageDigest: $imageDigest, environment: $environment, operationKind: $operationKind, deploymentId: $deploymentId, deploymentStatus: $deploymentStatus, verification: {qualification: $qualification, build: $build, registryPublication: $registryPublication, releaseFinalization: $releaseFinalization}, finalOutcome: $finalOutcome}' > delivery-report.json
           {
             echo "final_outcome=$final_outcome"
             echo "image_digest=$IMAGE_DIGEST"
@@ -406,3 +425,114 @@ jobs:
           path: delivery-report.json
           retention-days: 30
           if-no-files-found: warn
+
+  publication-report:
+    name: Report Gateway ${{ inputs.release_tag }} traceability
+    if: ${{ needs.delivery-result.outputs.final_outcome == 'PUBLISHED' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: delivery-result
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      traceability_outcome: ${{ steps.outcome.outputs.traceability_outcome }}
+    steps:
+      - name: Check out trusted publication reporter
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download verified delivery report
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: gateway-delivery-${{ inputs.release_tag }}
+          path: publication-evidence
+
+      - id: report
+        name: Publish Gateway ${{ inputs.release_tag }} traceability
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          report_file='publication-evidence/delivery-report.json'
+          node tools/ci/publication-report.mjs validate "$report_file" > /dev/null
+          RELEASE_SHA="$(jq -er '.sourceSha' "$report_file")"
+          git fetch --force --tags origin
+          previous_tag="$(git describe --tags --abbrev=0 "$RELEASE_SHA^" 2>/dev/null || true)"
+          if [[ -z "$previous_tag" || ! "$previous_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            jq '.traceability = {outcome: "NO_BASELINE", reason: "No earlier stable tag was available; no pull-request comments were guessed.", pullRequestComments: []}' "$report_file" > updated-delivery-report.json
+            mv updated-delivery-report.json "$report_file"
+            node tools/ci/publication-report.mjs summary "$report_file" <(printf '[]') >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git rev-list --reverse "$previous_tag..$RELEASE_SHA" > release-commits.txt
+          : > associated-pull-requests.ndjson
+          while IFS= read -r commit; do
+            gh api --paginate -H 'X-GitHub-Api-Version: 2022-11-28' "repos/$GITHUB_REPOSITORY/commits/$commit/pulls?per_page=100" --jq '.[]' >> associated-pull-requests.ndjson
+          done < release-commits.txt
+          jq -s '.' associated-pull-requests.ndjson > associated-pull-requests.json
+          node tools/ci/publication-report.mjs select-prs associated-pull-requests.json "$GITHUB_REPOSITORY" master > release-pull-requests.json
+          : > publication-comments.ndjson
+          while IFS= read -r pull_request; do
+            number="$(jq -r '.number' <<< "$pull_request")"
+            url="$(jq -r '.url' <<< "$pull_request")"
+            gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$number/comments?per_page=100" --jq '.[]' | jq -s '.' > pull-request-comments.json
+            plan="$(node tools/ci/publication-report.mjs comment-plan pull-request-comments.json "$report_file")"
+            action="$(jq -r '.action' <<< "$plan")"
+            comment_url="$(jq -r '.commentUrl // empty' <<< "$plan")"
+            if [[ "$action" == create || "$action" == update ]]; then
+              jq -n --arg body "$(jq -r '.body' <<< "$plan")" '{body: $body}' > comment-payload.json
+              if [[ "$action" == create ]]; then
+                if ! response="$(gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$number/comments" --input comment-payload.json)"; then
+                  gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$number/comments?per_page=100" --jq '.[]' | jq -s '.' > pull-request-comments.json
+                  retry_plan="$(node tools/ci/publication-report.mjs comment-plan pull-request-comments.json "$report_file")"
+                  [[ "$(jq -r '.action' <<< "$retry_plan")" == unchanged ]] || { echo "Unable to create publication comment for PR #$number." >&2; exit 1; }
+                  response="$(jq -n --arg url "$(jq -r '.commentUrl' <<< "$retry_plan")" '{html_url: $url}')"
+                  action='recovered-after-ambiguous-create'
+                fi
+              else
+                response="$(gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$(jq -r '.commentId' <<< "$plan")" --input comment-payload.json)"
+              fi
+              comment_url="$(jq -er '.html_url' <<< "$response")"
+            fi
+            jq -n --argjson number "$number" --arg url "$url" --arg action "$action" --arg commentUrl "$comment_url" '{number: $number, url: $url, action: $action, commentUrl: $commentUrl}' >> publication-comments.ndjson
+          done < <(jq -c '.[]' release-pull-requests.json)
+          jq -s '.' publication-comments.ndjson > publication-comments.json
+          jq --slurpfile comments publication-comments.json --arg previousTag "$previous_tag" '.traceability = {outcome: "PUBLISHED", previousTag: $previousTag, pullRequestComments: $comments[0]}' "$report_file" > updated-delivery-report.json
+          mv updated-delivery-report.json "$report_file"
+          node tools/ci/publication-report.mjs summary "$report_file" publication-comments.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload publication traceability evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: gateway-publication-traceability-${{ inputs.release_tag }}
+          path: publication-evidence/delivery-report.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - id: outcome
+        name: Confirm publication traceability
+        if: ${{ always() }}
+        shell: bash
+        env:
+          REPORT_OUTCOME: ${{ steps.report.outcome }}
+        run: |
+          set -euo pipefail
+          if [[ "$REPORT_OUTCOME" == success ]]; then
+            echo 'traceability_outcome=PUBLISHED' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'traceability_outcome=FAILED' >> "$GITHUB_OUTPUT"
+          {
+            echo '## Gateway publication traceability: FAILED'
+            echo
+            echo "Docker publication remains verified as \`PUBLISHED\`; PR comment/reporting failed and can be retried without allocating another version."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
