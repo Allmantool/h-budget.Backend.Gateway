@@ -66,4 +66,9 @@ test('final delivery status cannot pass for missing or failed publication eviden
   assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'failure', gitTag: 'v0.1.0' }).finalOutcome, 'FAILED');
   assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'failure' }).finalOutcome, 'FAILED');
   assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'success' }).finalOutcome, 'PUBLISHED');
+  assert.deepEqual(evaluateDelivery({ verifyResult: 'success', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'failure', deliveryOutcome: 'PUBLISHED', traceabilityOutcome: 'FAILED' }), {
+    finalOutcome: 'PUBLISHED',
+    traceabilityOutcome: 'FAILED',
+    reason: 'Immutable release, registry artifact, and environment publication record were verified; post-publication traceability failed.',
+  });
 });

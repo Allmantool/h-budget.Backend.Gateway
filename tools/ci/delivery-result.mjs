@@ -8,10 +8,21 @@ export function evaluateDelivery(evidence) {
   if (!evidence.gitTag) {
     return { finalOutcome: 'NO_RELEASE', reason: 'semantic-release produced no release identity.' };
   }
+  if (evidence.deliveryResult !== 'success' && evidence.deliveryOutcome === 'PUBLISHED') {
+    return {
+      finalOutcome: 'PUBLISHED',
+      traceabilityOutcome: evidence.traceabilityOutcome ?? 'FAILED',
+      reason: 'Immutable release, registry artifact, and environment publication record were verified; post-publication traceability failed.',
+    };
+  }
   if (evidence.deliveryResult !== 'success') {
     return { finalOutcome: 'FAILED', reason: `Versioned delivery result: ${evidence.deliveryResult ?? 'missing'}.` };
   }
-  return { finalOutcome: 'PUBLISHED', reason: 'Immutable release, registry artifact, and environment publication record were verified.' };
+  return {
+    finalOutcome: 'PUBLISHED',
+    traceabilityOutcome: evidence.traceabilityOutcome ?? 'PUBLISHED',
+    reason: 'Immutable release, registry artifact, and environment publication record were verified.',
+  };
 }
 
 if (import.meta.main) {

@@ -14,5 +14,10 @@
 | Exact release artifact | `release-tag / build-image` | archive smoke-tested before publication |
 | Publication/recovery | `release-tag / push-image` | version/SHA identity and remote digest convergence under `production` |
 | Final delivery result | `update_semver / deliver, delivery-result` and `release-tag / delivery-result` | direct reusable handoff; release, registry, and Environment readback report |
+| Human publication traceability | `release-tag / publication-report` and `publication-report.mjs` | verified delivery report renders the Actions summary, managed PR comment, and traceability artifact |
 
 Canonical local verification is the pinned .NET 10 SDK container in `dockerfile`; `global.json` selects SDK `10.0.300` with feature-band roll-forward. Use `npm ci --ignore-scripts && npm run test:release-policy`, the container .NET build/test commands, `tools/ci/container-smoke.sh`, and `pwsh tools/ci/configure-merge-protection.ps1 -Mode Inspect` for evidence.
+
+The reporter runs only after the delivery report is `PUBLISHED`. It uses the release-range commits and GitHub's commit-to-pull-request association API, filters to merged PRs targeting this repository's `master`, and deduplicates them. Each PR/version/environment has one `home-ledger:gateway-publication` marker owned by `github-actions[bot]`; retries update that comment rather than adding a duplicate. A missing association is reported as no match, while an association API failure fails the reporting job without changing the verified artifact outcome.
+
+The `production` record is a **registry publication**, not runtime deployment. The report always says “Published to Docker Hub” and includes the verified digest, source SHA, release/run links, and the Environment activity link. The `v0.1.2` fixture records the observed release `385577746`, source `ce1b639ae97b0c6e1635e76f0c81d533b09b1f25`, digest `sha256:2e483e847eac37afe1133a8b0c762cdbb99cb62dd259dfc5a422fce7d230e182`, and publication run `34361835433`; it is a local metadata preview, not a retrospective remote edit.

@@ -53,6 +53,7 @@ test('defines stable tag, bootstrap, and release workflow invariants', async () 
   assert.equal(isStableTag('v1.2.3-rc.1'), false);
   assert.deepEqual(releaseConfig.branches, ['master']);
   assert.equal(releaseConfig.tagFormat, 'v${version}');
+  assert.equal(releaseConfig.plugins[2][1].successCommentCondition, false);
   const [policy, commonQuality, release, deployment] = await Promise.all([
     readFile(new URL('../../.github/workflows/ci-master.yml', import.meta.url), 'utf8'),
     readFile(new URL('../../.github/workflows/ci-common.yml', import.meta.url), 'utf8'),
@@ -73,7 +74,7 @@ test('defines stable tag, bootstrap, and release workflow invariants', async () 
   assert.match(release, /npx --no-install semantic-release/);
   assert.match(release, /release_id: \$\{\{ steps\.publish\.outputs\.release_id \}\}/);
   assert.match(release, /release_id: \$\{\{ needs\.publish\.outputs\.release_id \}\}/);
-  assert.match(release, /deliver:\s+name:[\s\S]*?permissions:\s+contents: write\s+deployments: read\s+uses: \.\/\.github\/workflows\/release-tag\.yml/);
+  assert.match(release, /deliver:\s+name:[\s\S]*?permissions:\s+contents: write\s+deployments: read\s+pull-requests: write\s+uses: \.\/\.github\/workflows\/release-tag\.yml/);
   assert.doesNotMatch(release, /git push --force|git tag -f/);
   assert.match(deployment, /workflow_call/);
   assert.match(deployment, /release_id:/);
@@ -89,6 +90,11 @@ test('defines stable tag, bootstrap, and release workflow invariants', async () 
   assert.match(deployment, /GATEWAY_IMAGE_REPOSITORY: allmantool\/homebudget-backend-gateway/);
   assert.match(deployment, /environment:\s+name: production/);
   assert.match(deployment, /delivery-report\.json/);
+  assert.match(deployment, /publication-report:[\s\S]*?pull-requests: write/);
+  assert.match(deployment, /commits\/\$commit\/pulls\?per_page=100/);
+  assert.match(deployment, /issues\/\$number\/comments\?per_page=100/);
+  assert.match(deployment, /recovered-after-ambiguous-create/);
+  assert.match(deployment, /tools\/ci\/publication-report\.mjs summary/);
   assert.match(deployment, /BUILD_VERSION=\$\{\{ needs\.verify-release\.outputs\.release_version \}\}/);
   assert.match(deployment, /BUILD_SHA=\$\{\{ needs\.verify-release\.outputs\.release_sha \}\}/);
   assert.match(deployment, /org\.opencontainers\.image\.revision/);

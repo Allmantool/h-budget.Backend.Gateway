@@ -141,6 +141,7 @@ jobs:
     permissions:
       contents: write
       deployments: read
+      pull-requests: write
     uses: ./.github/workflows/release-tag.yml
     with:
       release_tag: ${{ needs.publish.outputs.release_tag }}
@@ -170,10 +171,12 @@ jobs:
           PUBLISH_RESULT: ${{ needs.publish.result }}
           RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
           DELIVERY_RESULT: ${{ needs.deliver.result }}
+          DELIVERY_OUTCOME: ${{ needs.deliver.outputs.final_outcome }}
+          TRACEABILITY_OUTCOME: ${{ needs.deliver.outputs.traceability_outcome }}
         shell: bash
         run: |
           set -euo pipefail
-          evidence="$(jq -cn --arg verifyResult "$VERIFY_RESULT" --arg publishResult "$PUBLISH_RESULT" --arg gitTag "$RELEASE_TAG" --arg deliveryResult "$DELIVERY_RESULT" '{verifyResult: $verifyResult, publishResult: $publishResult, gitTag: $gitTag, deliveryResult: $deliveryResult}')"
+          evidence="$(jq -cn --arg verifyResult "$VERIFY_RESULT" --arg publishResult "$PUBLISH_RESULT" --arg gitTag "$RELEASE_TAG" --arg deliveryResult "$DELIVERY_RESULT" --arg deliveryOutcome "$DELIVERY_OUTCOME" --arg traceabilityOutcome "$TRACEABILITY_OUTCOME" '{verifyResult: $verifyResult, publishResult: $publishResult, gitTag: $gitTag, deliveryResult: $deliveryResult, deliveryOutcome: $deliveryOutcome, traceabilityOutcome: $traceabilityOutcome}')"
           result="$(DELIVERY_EVIDENCE="$evidence" node tools/ci/delivery-result.mjs)"
           printf '## Gateway final delivery: %s\n\n%s\n' "$(jq -r '.finalOutcome' <<< "$result")" "$(jq -r '.reason' <<< "$result")" >> "$GITHUB_STEP_SUMMARY"
           case "$(jq -r '.finalOutcome' <<< "$result")" in
