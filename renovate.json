@@ -13,19 +13,11 @@
     ],
     "packageRules": [
         {
-            "matchRepositories": [
-                "*"
-            ],
-            "matchUpdateTypes": [
-                "minor",
-                "patch"
-            ]
+            "matchPackageNames": ["*"],
+            "matchUpdateTypes": ["minor", "patch"]
         }
     ],
     "labels": [
         "Renovate-update-dependencies"
-    ],
-    "reviewers": [
-        "[REVIEWER_EMAIL_ADDRESS_GOES_HERE]"
     ]
 }

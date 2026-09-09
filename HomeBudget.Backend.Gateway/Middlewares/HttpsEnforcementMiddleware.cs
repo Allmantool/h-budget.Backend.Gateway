@@ -42,6 +42,7 @@ namespace HomeBudget.Backend.Gateway.Middlewares
             }
 
             const string scheme = "https";
+
             var host = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault()
                        ?? context.Request.Host.Value;
 

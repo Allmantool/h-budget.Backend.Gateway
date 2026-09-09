@@ -1,257 +1,256 @@
-name: Release Tag
+name: Gateway Deployment
+run-name: ${{ inputs.redeploy && 'Redeploy' || 'Deploy' }} ${{ inputs.release_tag }}
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing immutable vMAJOR.MINOR.PATCH tag to deploy.
+        required: true
+        type: string
+      release_sha:
+        description: Expected full commit SHA for an automatically dispatched release.
+        required: false
+        type: string
+      redeploy:
+        description: Distinguish a manual stable-tag redeploy from the initial deployment.
+        default: true
+        required: false
+        type: boolean
 
 permissions:
   contents: read
-  deployments: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: gateway-production
   cancel-in-progress: false
 
 env:
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-  IMAGE_NAME: homebudget-backend-gateway
+  GATEWAY_IMAGE_NAME: homebudget-backend-gateway
 
 jobs:
-  verify-tag-source:
-    name: Verify Tag Origin
+  verify-release:
+    name: Verify release identity
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
-      release_tag: ${{ steps.validate.outputs.release_tag }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      release_version: ${{ steps.release.outputs.release_version }}
+      release_sha: ${{ steps.release.outputs.release_sha }}
     steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Check out immutable release tag
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          ref: ${{ inputs.release_tag }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Validate tag is reachable from master
-        id: validate
+      - id: release
+        name: Validate tag, source, and GitHub Release
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
         run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git fetch --force --tags origin
           git fetch origin master --depth=1
+          release_sha="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          test "$(git rev-parse HEAD)" = "$release_sha"
+          test -z "$EXPECTED_RELEASE_SHA" || test "$EXPECTED_RELEASE_SHA" = "$release_sha"
+          git merge-base --is-ancestor "$release_sha" origin/master
+          release_target="$(gh release view "$RELEASE_TAG" --json targetCommitish --jq '.targetCommitish')"
+          release_target_sha="$(git rev-parse "$release_target^{commit}" 2>/dev/null || true)"
+          [[ "$release_target" == "$release_sha" || "$release_target_sha" == "$release_sha" ]]
+          {
+            echo "release_tag=$RELEASE_TAG"
+            echo "release_version=${RELEASE_TAG#v}"
+            echo "release_sha=$release_sha"
+          } >> "$GITHUB_OUTPUT"
 
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/master"; then
-            echo "::error::Tag ${GITHUB_REF_NAME} points to ${GITHUB_SHA}, which is not reachable from origin/master."
-            exit 1
-          fi
-
-          echo "release_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          echo "Validated tag ${GITHUB_REF_NAME} on commit ${GITHUB_SHA}."
-
-  validate-application-build:
-    name: Validate Application Build
+  build-image:
+    name: Build Gateway image
     runs-on: ubuntu-latest
-    needs: verify-tag-source
-    defaults:
-      run:
-        working-directory: .
+    timeout-minutes: 35
+    needs: verify-release
     steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Check out immutable release tag
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          ref: ${{ needs.verify-release.outputs.release_tag }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build Gateway image archive
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
-          dotnet-version: "10.0.x"
-          cache: true
-          cache-dependency-path: |
-            Directory.Packages.props
-            **/*.csproj
+          context: .
+          file: ./dockerfile
+          target: final
+          build-args: |
+            BUILD_VERSION=${{ needs.verify-release.outputs.release_version }}
+            BUILD_SHA=${{ needs.verify-release.outputs.release_sha }}
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}:${{ needs.verify-release.outputs.release_version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}:sha-${{ needs.verify-release.outputs.release_sha }}
+          labels: |
+            org.opencontainers.image.title=${{ env.GATEWAY_IMAGE_NAME }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.verify-release.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.verify-release.outputs.release_version }}
+          outputs: type=docker,dest=/tmp/gateway-image.tar
+          cache-from: type=gha,scope=gateway-release
+          cache-to: type=gha,mode=max,scope=gateway-release
 
-      - name: Restore .NET packages
-        run: dotnet restore HomeBudgetBackendGateway.sln
-
-      - name: Build solution
-        run: dotnet build HomeBudgetBackendGateway.sln --no-restore --no-incremental
-
-  create-deployment:
-    name: Create GitHub Deployment
-    runs-on: ubuntu-latest
-    needs:
-      - verify-tag-source
-      - validate-application-build
-    outputs:
-      deployment_id: ${{ steps.create.outputs.deployment_id }}
-    steps:
-      - name: Create deployment
-        id: create
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
-        with:
-          script: |
-            const deployment = await github.rest.repos.createDeployment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: context.ref,
-              auto_merge: false,
-              required_contexts: [],
-              environment: 'production',
-              transient_environment: false,
-              production_environment: true,
-              description: `Deploying Docker image for tag ${context.ref.replace('refs/tags/', '')}`
-            });
-
-            core.setOutput('deployment_id', deployment.data.id.toString());
-
-  build-docker-image:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
-    needs:
-      - verify-tag-source
-      - validate-application-build
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          fetch-depth: 0
-
-      - name: Build Docker image
-        shell: bash
-        run: |
-          image_ref="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${{ needs.verify-tag-source.outputs.release_tag }}"
-          echo "Building Docker image for tag: ${{ needs.verify-tag-source.outputs.release_tag }}"
-          echo "Resolved image ref: ${image_ref}"
-          docker build \
-            --target final \
-            --build-arg BUILD_VERSION="${{ needs.verify-tag-source.outputs.release_tag }}" \
-            -t "${image_ref}" \
-            .
-
-      - name: Export Docker image
-        shell: bash
-        run: |
-          mkdir -p docker-artifacts
-          image_ref="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${{ needs.verify-tag-source.outputs.release_tag }}"
-          docker save "${image_ref}" | gzip > docker-artifacts/docker-image.tar.gz
-
-      - name: Upload Docker image artifact
+      - name: Upload Gateway image artifact
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: docker-image-${{ needs.verify-tag-source.outputs.release_tag }}
-          path: docker-artifacts/docker-image.tar.gz
+          name: gateway-image-${{ needs.verify-release.outputs.release_tag }}
+          path: /tmp/gateway-image.tar
           retention-days: 1
           if-no-files-found: error
 
-  push-docker-image:
-    name: Push Docker Image
+      - name: Smoke-test the exact image candidate
+        run: |
+          chmod +x tools/ci/container-smoke.sh
+          docker load --input /tmp/gateway-image.tar
+          tools/ci/container-smoke.sh --image "${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}:${{ needs.verify-release.outputs.release_version }}" --mode success
+          tools/ci/container-smoke.sh --image "${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}:${{ needs.verify-release.outputs.release_version }}" --mode invalid-config
+
+  push-image:
+    name: Publish Gateway image
     runs-on: ubuntu-latest
-    needs:
-      - verify-tag-source
-      - create-deployment
-      - build-docker-image
+    timeout-minutes: 20
+    needs: [verify-release, build-image]
     outputs:
-      image_digest: ${{ steps.push.outputs.image_digest }}
-    defaults:
-      run:
-        working-directory: .
+      image_ref: ${{ steps.publish.outputs.image_ref }}
+      image_digest: ${{ steps.publish.outputs.image_digest }}
     steps:
-      - name: Download Docker image artifact
+      - name: Download Gateway image artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
-          name: docker-image-${{ needs.verify-tag-source.outputs.release_tag }}
+          name: gateway-image-${{ needs.verify-release.outputs.release_tag }}
           path: docker-artifacts
 
-      - name: Load Docker image
-        shell: bash
-        run: |
-          gunzip -c docker-artifacts/docker-image.tar.gz | docker load
+      - name: Load Gateway image
+        run: docker load --input docker-artifacts/gateway-image.tar
 
       - name: Login to Docker Hub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push Docker image
-        id: push
+      - id: publish
+        name: Validate and publish immutable image tags
         shell: bash
+        env:
+          IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.GATEWAY_IMAGE_NAME }}
+          RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
+          RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
         run: |
-          image_ref="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${{ needs.verify-tag-source.outputs.release_tag }}"
-          docker push "${image_ref}"
-
-          digest="$(docker image inspect "${image_ref}" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
-
-          if [[ -z "${digest}" ]]; then
-            echo "::error::Unable to determine pushed image digest for ${image_ref}."
-            exit 1
+          set -euo pipefail
+          version_ref="$IMAGE_NAME:$RELEASE_VERSION"
+          sha_ref="$IMAGE_NAME:sha-$RELEASE_SHA"
+          inspect_tag() {
+            local image_ref="$1"
+            local inspection=''
+            if inspection="$(docker manifest inspect "$image_ref" 2>&1)"; then
+              docker pull "$image_ref" >/dev/null
+              local revision version
+              revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image_ref")"
+              version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image_ref")"
+              [[ "$revision" == "$RELEASE_SHA" && "$version" == "$RELEASE_VERSION" ]] || { echo "Existing image tag points to a different release: $image_ref" >&2; exit 1; }
+              echo true
+            elif [[ "$inspection" == *'no such manifest'* || "$inspection" == *'manifest unknown'* ]]; then
+              echo false
+            else
+              echo "Unable to confirm Docker image tag is unused: $inspection" >&2
+              exit 1
+            fi
+          }
+          version_exists="$(inspect_tag "$version_ref")"
+          sha_exists="$(inspect_tag "$sha_ref")"
+          if [[ "$version_exists" == false && "$sha_exists" == false ]]; then
+            docker push "$version_ref"
+            docker push "$sha_ref"
+          elif [[ "$version_exists" == true && "$sha_exists" == false ]]; then
+            docker pull "$version_ref" >/dev/null
+            docker tag "$version_ref" "$sha_ref"
+            docker push "$sha_ref"
+          elif [[ "$version_exists" == false && "$sha_exists" == true ]]; then
+            docker pull "$sha_ref" >/dev/null
+            docker tag "$sha_ref" "$version_ref"
+            docker push "$version_ref"
           fi
+          docker pull "$version_ref" >/dev/null
+          docker pull "$sha_ref" >/dev/null
+          digest="$(docker image inspect "$version_ref" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
+          test -n "$digest"
+          sha_digest="$(docker image inspect "$sha_ref" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
+          test "$digest" = "$sha_digest"
+          {
+            echo "image_ref=$version_ref"
+            echo "image_digest=$digest"
+          } >> "$GITHUB_OUTPUT"
 
-          echo "image_digest=${digest}" >> "$GITHUB_OUTPUT"
-          echo "Pushed digest: ${digest}"
-
-  publish-release-metadata:
-    name: Publish Release Metadata
+  record-deployment:
+    name: Record release traceability
     runs-on: ubuntu-latest
-    needs:
-      - verify-tag-source
-      - push-docker-image
+    timeout-minutes: 10
+    if: ${{ always() }}
+    needs: [verify-release, build-image, push-image]
+    environment:
+      name: production
+    permissions:
+      contents: write
     steps:
-      - name: Create release metadata
+      - name: Update release traceability and retain metadata
+        if: ${{ needs.verify-release.result == 'success' && needs.push-image.result == 'success' }}
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.verify-release.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
+          RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
+          IMAGE_REF: ${{ needs.push-image.outputs.image_ref }}
+          IMAGE_DIGEST: ${{ needs.push-image.outputs.image_digest }}
         run: |
+          set -euo pipefail
           mkdir -p release-artifacts
-          image_ref="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${{ needs.verify-tag-source.outputs.release_tag }}"
-          cat <<EOF > release-artifacts/release-metadata.txt
-          release_tag=${{ needs.verify-tag-source.outputs.release_tag }}
-          commit_sha=${GITHUB_SHA}
-          docker_image=${image_ref}
-          docker_digest=${{ needs.push-docker-image.outputs.image_digest }}
-          source_ref=${GITHUB_REF}
+          cat > release-artifacts/release-metadata.json <<EOF
+          {"release_tag":"$RELEASE_TAG","release_version":"$RELEASE_VERSION","commit_sha":"$RELEASE_SHA","workflow_run_url":"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID","image_ref":"$IMAGE_REF","image_digest":"$IMAGE_DIGEST"}
           EOF
+          gh release view "$RELEASE_TAG" --json body --jq '.body' > release-notes.md
+          sed '/<!-- gateway-release-trace:start -->/,/<!-- gateway-release-trace:end -->/d' release-notes.md > updated-release-notes.md
+          cat >> updated-release-notes.md <<EOF
+
+          <!-- gateway-release-trace:start -->
+          ## Gateway deployment traceability
+
+          - Commit: \`$RELEASE_SHA\`
+          - Environment: \`production\`
+          - Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          - Image: \`$IMAGE_REF@$IMAGE_DIGEST\`
+          <!-- gateway-release-trace:end -->
+          EOF
+          gh release edit "$RELEASE_TAG" --notes-file updated-release-notes.md
+          gh release edit "$RELEASE_TAG" --draft=false
 
       - name: Upload release metadata
+        if: ${{ needs.verify-release.result == 'success' && needs.push-image.result == 'success' }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: release-${{ needs.verify-tag-source.outputs.release_tag }}
-          path: release-artifacts/release-metadata.txt
+          name: release-${{ needs.verify-release.outputs.release_tag }}
+          path: release-artifacts/release-metadata.json
           retention-days: 30
           if-no-files-found: error
 
-  finalize-deployment:
-    name: Finalize Deployment
-    runs-on: ubuntu-latest
-    if: ${{ always() && needs.create-deployment.result == 'success' }}
-    needs:
-      - verify-tag-source
-      - create-deployment
-      - push-docker-image
-      - publish-release-metadata
-    steps:
-      - name: Set deployment status
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
-        with:
-          script: |
-            const releaseTag = '${{ needs.verify-tag-source.outputs.release_tag }}';
-            const imageRef = `${process.env.DOCKERHUB_USERNAME}/${process.env.IMAGE_NAME}:${releaseTag}`;
-            const imageDigest = '${{ needs.push-docker-image.outputs.image_digest }}';
-            const pushResult = '${{ needs.push-docker-image.result }}';
-            const metadataResult = '${{ needs.publish-release-metadata.result }}';
-
-            const isSuccess = pushResult === 'success' && metadataResult === 'success';
-            const state = isSuccess ? 'success' : 'failure';
-            const description = isSuccess
-              ? `Released ${releaseTag} as ${imageRef}@${imageDigest}`
-              : `Release ${releaseTag} failed during ${pushResult !== 'success' ? 'docker push' : 'metadata publication'}`;
-
-            const payload = {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              deployment_id: Number('${{ needs.create-deployment.outputs.deployment_id }}'),
-              state,
-              description
-            };
-
-            if (isSuccess) {
-              payload.environment_url = `https://hub.docker.com/r/${process.env.DOCKERHUB_USERNAME}/${process.env.IMAGE_NAME}`;
-            }
-
-            await github.rest.repos.createDeploymentStatus(payload);
+      - name: Fail when a mandatory release stage failed
+        if: ${{ needs.verify-release.result != 'success' || needs.push-image.result != 'success' }}
+        run: exit 1

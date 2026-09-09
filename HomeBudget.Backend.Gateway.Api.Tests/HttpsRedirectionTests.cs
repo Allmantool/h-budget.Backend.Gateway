@@ -1,67 +1,50 @@
 ﻿using System;
-using System.Net;
-using System.Net.Http;
 using System.Threading.Tasks;
 
-using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Http;
 
 using HomeBudget.Backend.Gateway.Constants;
+using HomeBudget.Backend.Gateway.Middlewares;
 
 namespace HomeBudget.Backend.Gateway.Api.Tests
 {
     [TestFixture]
-    public class HttpsRedirectionTests
+    internal sealed class HttpsRedirectionTests
     {
-        private GatewayWebApplicationFactory _factory = null!;
-        private HttpClient _client = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            _factory = new GatewayWebApplicationFactory();
-
-            _client = _factory.CreateClient(new WebApplicationFactoryClientOptions
-            {
-                AllowAutoRedirect = false,
-                BaseAddress = new Uri("http://localhost")
-            });
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            _client.Dispose();
-            _factory.Dispose();
-        }
-
         [Test]
         public async Task Http_Request_To_Regular_Endpoint_Should_Redirect_To_Https()
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "/swagger");
+            var context = await InvokeMiddlewareAsync("/swagger");
 
-            var response = await _client.SendAsync(request);
-
-            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Redirect));
-
-            var location = response.Headers.Location;
-            Assert.That(location, Is.Not.Null);
-
-            var redirectUri = location!.IsAbsoluteUri
-                ? location
-                : new Uri(_client.BaseAddress!, location);
-
-            Assert.That(redirectUri.Scheme, Is.EqualTo("https"));
-            Assert.That(redirectUri.AbsolutePath, Is.EqualTo("/swagger"));
+            Assert.That(context.Response.StatusCode, Is.EqualTo(StatusCodes.Status302Found));
+            Assert.That(context.Response.Headers.Location, Is.EqualTo("https://localhost/swagger"));
         }
 
         [TestCase(Endpoints.HealthCheckSource)]
         [TestCase(Endpoints.Metrics)]
         public async Task Http_Request_To_Internal_Endpoints_Should_Not_Redirect(string path)
         {
-            using var response = await _client.GetAsync(path);
+            var context = await InvokeMiddlewareAsync(path);
 
-            Assert.That(response.StatusCode, Is.Not.EqualTo(HttpStatusCode.Redirect));
-            Assert.That(response.StatusCode, Is.Not.EqualTo(HttpStatusCode.MovedPermanently));
+            Assert.That(context.Response.StatusCode, Is.EqualTo(StatusCodes.Status204NoContent));
+            Assert.That(context.Response.Headers.Location, Is.Empty);
+        }
+
+        private static async Task<DefaultHttpContext> InvokeMiddlewareAsync(string path)
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Scheme = Uri.UriSchemeHttp;
+            context.Request.Host = new HostString("localhost");
+            context.Request.Path = path;
+
+            var middleware = new HttpsEnforcementMiddleware(next =>
+            {
+                next.Response.StatusCode = StatusCodes.Status204NoContent;
+                return Task.CompletedTask;
+            });
+
+            await middleware.InvokeAsync(context);
+            return context;
         }
     }
 }

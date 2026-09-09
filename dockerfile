@@ -1,12 +1,14 @@
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:8c0b6857eab7b2aa57884c839bf4678414606bd7d17370f18a842ac5cf414711 AS base
 WORKDIR /app
 EXPOSE 80 443 7298
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:c0790639332692a0d56cdd81ed581cfd24d040d9839764c138994866df89a3b6 AS build
 WORKDIR /src
 
-ARG BUILD_VERSION
+ARG BUILD_VERSION=0.0.0
+ARG BUILD_SHA=local
 ENV BUILD_VERSION=${BUILD_VERSION}
+ENV BUILD_SHA=${BUILD_SHA}
 
 COPY Directory.Build.props ./
 COPY Directory.Packages.props ./
@@ -44,9 +46,19 @@ COPY . .
 RUN dotnet build HomeBudgetBackendGateway.sln \
     -c Release \
     -f net10.0 \
+    --no-restore \
+    /p:Version=$BUILD_VERSION \
+    /p:InformationalVersion=$BUILD_VERSION+$BUILD_SHA \
     -o /app/build \
     /maxcpucount:1 \
     --no-incremental
+
+FROM build AS test
+RUN dotnet test HomeBudget.Backend.Gateway.Api.Tests/HomeBudget.Backend.Gateway.Api.Tests.csproj \
+    --configuration Release \
+    --no-restore
+
+FROM build AS publish
 
 # === Run Snitch analysis ===
 RUN /tools/snitch
@@ -56,6 +68,8 @@ RUN dotnet publish "HomeBudgetBackendGateway.sln" \
     --no-restore \
     /maxcpucount:1 \
     --framework net10.0 \
+    /p:Version=$BUILD_VERSION \
+    /p:InformationalVersion=$BUILD_VERSION+$BUILD_SHA \
     -c Release \
     -v Diagnostic \
     -o /app/publish
@@ -63,6 +77,6 @@ RUN dotnet publish "HomeBudgetBackendGateway.sln" \
 FROM base AS final
 WORKDIR /app
 
-COPY --from=build /app/publish .
+COPY --from=publish /app/publish .
 
 ENTRYPOINT ["dotnet", "HomeBudget.Backend.Gateway.dll"]

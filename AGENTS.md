@@ -107,3 +107,11 @@ The final response for non-trivial work must include:
 - What checks were run.
 - Any checks that could not be run.
 - Any intentional deviations from these standards.
+
+## Pull-request and release contract
+
+- Every PR to `master` must state its purpose, acceptance criteria, implementation summary, tests or verification evidence, compatibility/operational impact, and expected semantic-version impact (`major`, `minor`, `patch`, or `no release`).
+- For non-trivial executable work, maintain traceability from requirement to acceptance criterion to implementation to test or verification evidence. Regression-first/TDD evidence is recorded only when actually performed.
+- The checked PR template is supporting documentation. The required `Gateway PR Gate` is the sole automated merge evidence and must pass on the current merge candidate.
+- Do not introduce path, label, or documentation shortcuts that skip mandatory verification. Keep PR workflows read-only; they must not publish, tag, deploy, or use write credentials.
+- Follow `docs/ci-cd/gateway-pr-verification.md` and `docs/ci-cd/gateway-release-contract.md` when changing CI/CD or release behavior.
