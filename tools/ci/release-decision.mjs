@@ -8,6 +8,7 @@ export function resolveReleaseDecision(observation, recovery) {
       version: recovery.tag.slice(1),
       gitTag: recovery.tag,
       sourceSha: recovery.sourceSha,
+      releaseId: recovery.releaseId,
       previousVersion: observation?.previousRelease?.version ?? null,
       releaseType: observation?.nextRelease?.type ?? null,
     };
@@ -31,15 +32,16 @@ export function resolveReleaseDecision(observation, recovery) {
     version: observation.nextRelease.version,
     gitTag: observation.nextRelease.gitTag,
     sourceSha: observation.nextRelease.gitHead ?? observation.sourceSha ?? null,
+    releaseId: observation.releaseId ?? null,
     previousVersion: observation.previousRelease?.version ?? null,
     releaseType: observation.nextRelease.type ?? null,
   };
 }
 
 if (import.meta.main) {
-  const [file, recoveryTag, recoverySourceSha] = process.argv.slice(2);
+  const [file, recoveryFile] = process.argv.slice(2);
   if (!file) throw new Error('Usage: node tools/ci/release-decision.mjs <observation.json>');
   const observation = JSON.parse(await readFile(file, 'utf8'));
-  const recovery = recoveryTag ? { tag: recoveryTag, sourceSha: recoverySourceSha } : undefined;
+  const recovery = recoveryFile ? JSON.parse(await readFile(recoveryFile, 'utf8')) : undefined;
   process.stdout.write(`${JSON.stringify(resolveReleaseDecision(observation, recovery))}\n`);
 }

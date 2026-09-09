@@ -71,8 +71,13 @@ test('defines stable tag, bootstrap, and release workflow invariants', async () 
   assert.match(release, /uses: \.\/\.github\/workflows\/release-tag\.yml/);
   assert.doesNotMatch(release, /gh workflow run/);
   assert.match(release, /npx --no-install semantic-release/);
+  assert.match(release, /release_id: \$\{\{ steps\.publish\.outputs\.release_id \}\}/);
+  assert.match(release, /release_id: \$\{\{ needs\.publish\.outputs\.release_id \}\}/);
   assert.doesNotMatch(release, /git push --force|git tag -f/);
   assert.match(deployment, /workflow_call/);
+  assert.match(deployment, /release_id:/);
+  assert.match(deployment, /releases\/\$RELEASE_ID/);
+  assert.doesNotMatch(deployment, /gh release view|gh release edit/);
   assert.doesNotMatch(deployment, /GATEWAY_PUBLICATION_ENABLED|HELD|publication-preflight/);
   assert.match(deployment, /GATEWAY_IMAGE_REPOSITORY: allmantool\/homebudget-backend-gateway/);
   assert.match(deployment, /environment:\s+name: production/);

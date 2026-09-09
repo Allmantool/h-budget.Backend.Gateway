@@ -14,13 +14,13 @@ Only a non-draft Release with the traceability block is deployable handoff. Publ
 | State | Safe recovery |
 | --- | --- |
 | No tag or draft | Fix through a PR; do not allocate a manual version. |
-| Tag/draft exists and dispatch failed | Run `Gateway Deployment` with the same tag and resolved SHA. |
-| Image workflow failed | Rerun `Gateway Deployment`; it uses the existing immutable tag. |
+| Tag/draft exists and dispatch failed | Run `Gateway Deployment` from the trusted default-branch workflow revision with the same tag, resolved source SHA, and numeric GitHub Release REST ID. |
+| Image workflow failed | Rerun `Gateway Deployment` with the same tag, source SHA, and Release REST ID; it uses the existing immutable tag. |
 | One image tag exists | The workflow verifies labels/digest and copies that registry image to only the missing tag. |
 | Existing tags conflict | Stop; do not overwrite or move either tag. |
 | Images exist but trace metadata is absent | Rerun deployment to reconcile metadata and publish the draft. |
 | Semantic-release finds no new version | Recover the existing draft through deployment; it will not reallocate a version. |
 
-Retain workflow URL, tag SHA, image digest, and `release-<tag>` artifact. Docker Hub tag immutability/access control remains an operational prerequisite.
+Retain workflow URL, tag SHA, numeric GitHub Release REST ID, image digest, and `release-<tag>` artifact. Docker Hub tag immutability/access control remains an operational prerequisite.
 
 The `production` Environment records **registry publication**, not runtime rollout. A runtime deployment requires an owner-provided target mechanism that consumes the verified digest and proves its own health; without one, report `PUBLISHED` and `RUNTIME DEPLOYMENT: NOT CONFIGURED`.

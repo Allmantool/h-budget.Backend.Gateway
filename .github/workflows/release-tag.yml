@@ -10,6 +10,9 @@ on:
       release_sha:
         required: true
         type: string
+      release_id:
+        required: true
+        type: string
       redeploy:
         required: true
         type: boolean
@@ -39,6 +42,10 @@ on:
         description: Expected full commit SHA for an automatically dispatched release.
         required: false
         type: string
+      release_id:
+        description: Numeric REST ID of the existing GitHub Release to recover.
+        required: true
+        type: string
       redeploy:
         description: Distinguish a manual stable-tag redeploy from the initial deployment.
         default: true
@@ -64,6 +71,7 @@ jobs:
       release_tag: ${{ steps.release.outputs.release_tag }}
       release_version: ${{ steps.release.outputs.release_version }}
       release_sha: ${{ steps.release.outputs.release_sha }}
+      release_id: ${{ steps.release.outputs.release_id }}
     steps:
       - name: Check out immutable release tag
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -79,22 +87,32 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
           git fetch --force --tags origin
           git fetch origin master --depth=1
           release_sha="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
           test "$(git rev-parse HEAD)" = "$release_sha"
           test -z "$EXPECTED_RELEASE_SHA" || test "$EXPECTED_RELEASE_SHA" = "$release_sha"
           git merge-base --is-ancestor "$release_sha" origin/master
-          release_target="$(gh release view "$RELEASE_TAG" --json targetCommitish --jq '.targetCommitish')"
-          release_target_sha="$(git rev-parse "$release_target^{commit}" 2>/dev/null || true)"
-          [[ "$release_target" == "$release_sha" || "$release_target_sha" == "$release_sha" ]]
+          response_file="$RUNNER_TEMP/github-release-response.txt"
+          if ! gh api -i "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$response_file"; then
+            awk '/^HTTP\/|^[Xx]-[Gg]ithub-[Rr]equest-[Ii]d:|"message"|"status"/' "$response_file" >&2 || true
+            echo "Unable to read GitHub Release ID $RELEASE_ID for $RELEASE_TAG." >&2
+            exit 1
+          fi
+          release="$(awk 'BEGIN { body = 0 } /^\r?$/ { body = 1; next } body { print }' "$response_file")"
+          release_json="$RUNNER_TEMP/github-release.json"
+          printf '%s\n' "$release" > "$release_json"
+          node tools/ci/release-resolver.mjs --verify "$release_json" "$RELEASE_ID" "$RELEASE_TAG" > /dev/null
           {
             echo "release_tag=$RELEASE_TAG"
             echo "release_version=${RELEASE_TAG#v}"
             echo "release_sha=$release_sha"
+            echo "release_id=$RELEASE_ID"
           } >> "$GITHUB_OUTPUT"
 
   build-image:
@@ -150,7 +168,7 @@ jobs:
           tools/ci/container-smoke.sh --image "${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}" --mode invalid-config
 
   push-image:
-    name: Publish Gateway v${{ needs.verify-release.outputs.release_version }} to Docker Hub
+    name: Publish Gateway ${{ needs.verify-release.outputs.release_tag || inputs.release_tag }} to Docker Hub
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [verify-release, build-image]
@@ -229,22 +247,22 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   record-deployment:
-    name: Finalize GitHub Release v${{ needs.verify-release.outputs.release_version }}
+    name: Finalize GitHub Release ${{ needs.verify-release.outputs.release_tag || inputs.release_tag }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: ${{ always() }}
+    if: ${{ needs.verify-release.result == 'success' && needs.build-image.result == 'success' && needs.push-image.result == 'success' && needs.verify-release.outputs.release_id != '' && needs.push-image.outputs.image_digest != '' }}
     needs: [verify-release, build-image, push-image]
     permissions:
       contents: write
     steps:
       - name: Update release traceability and retain metadata
-        if: ${{ needs.verify-release.result == 'success' && needs.push-image.result == 'success' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.verify-release.outputs.release_tag }}
           RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
           RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
+          RELEASE_ID: ${{ needs.verify-release.outputs.release_id }}
           IMAGE_REF: ${{ needs.push-image.outputs.image_ref }}
           IMAGE_DIGEST: ${{ needs.push-image.outputs.image_digest }}
         run: |
@@ -253,7 +271,7 @@ jobs:
           cat > release-artifacts/release-metadata.json <<EOF
           {"release_tag":"$RELEASE_TAG","release_version":"$RELEASE_VERSION","commit_sha":"$RELEASE_SHA","workflow_run_url":"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID","image_ref":"$IMAGE_REF","image_digest":"$IMAGE_DIGEST"}
           EOF
-          gh release view "$RELEASE_TAG" --json body --jq '.body' > release-notes.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.body' > release-notes.md
           sed '/<!-- gateway-release-trace:start -->/,/<!-- gateway-release-trace:end -->/d' release-notes.md > updated-release-notes.md
           cat >> updated-release-notes.md <<EOF
 
@@ -266,11 +284,10 @@ jobs:
           - Image: \`$IMAGE_REF@$IMAGE_DIGEST\`
           <!-- gateway-release-trace:end -->
           EOF
-          gh release edit "$RELEASE_TAG" --notes-file updated-release-notes.md
-          gh release edit "$RELEASE_TAG" --draft=false
+          jq -n --rawfile body updated-release-notes.md '{body: $body, draft: false}' > release-update.json
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --input release-update.json > /dev/null
 
       - name: Upload release metadata
-        if: ${{ needs.verify-release.result == 'success' && needs.push-image.result == 'success' }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: release-${{ needs.verify-release.outputs.release_tag }}
@@ -278,12 +295,8 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: Fail when a mandatory release stage failed
-        if: ${{ needs.verify-release.result != 'success' || needs.push-image.result != 'success' }}
-        run: exit 1
-
   delivery-result:
-    name: Verify Gateway v${{ needs.verify-release.outputs.release_version }} publication
+    name: Verify Gateway ${{ needs.verify-release.outputs.release_tag || inputs.release_tag }} publication
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -307,6 +320,7 @@ jobs:
           RELEASE_TAG: ${{ needs.verify-release.outputs.release_tag }}
           RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
           RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
+          RELEASE_ID: ${{ needs.verify-release.outputs.release_id }}
           IMAGE_REF: ${{ needs.push-image.outputs.image_ref }}
           IMAGE_DIGEST: ${{ needs.push-image.outputs.image_digest }}
           RELEASE_DECISION: ${{ inputs.release_decision }}
@@ -321,13 +335,15 @@ jobs:
           deployment_status=''
           release_id=''
           release_state=''
+          release_id_input="${RELEASE_ID:-}"
           verify_remote() {
             test -n "$RELEASE_TAG"
             test -n "$RELEASE_SHA"
+            [[ "$release_id_input" =~ ^[1-9][0-9]*$ ]]
             test -n "$IMAGE_DIGEST"
-            release_info="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json databaseId,isDraft)"
-            jq -e '.isDraft == false' <<< "$release_info" >/dev/null
-            release_id="$(jq -r '.databaseId' <<< "$release_info")"
+            release_info="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id_input")"
+            jq -e --argjson releaseId "$release_id_input" --arg releaseTag "$RELEASE_TAG" '.id == $releaseId and .tag_name == $releaseTag and .draft == false' <<< "$release_info" >/dev/null
+            release_id="$release_id_input"
             release_state='final'
             deployment_id="$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=production&sha=$RELEASE_SHA&per_page=100" --jq '[.[] | select(.environment == "production") | .id] | .[0] // empty')"
             test -n "$deployment_id"
