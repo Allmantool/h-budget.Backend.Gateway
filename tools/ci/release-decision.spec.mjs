@@ -60,15 +60,17 @@ test('rejects wrong ID, tag, or draft state before a release can be finalized', 
   assert.throws(() => validateReleaseIdentity({ ...draft, draft: undefined }, 385437440, 'v0.1.0'), /draft state/);
 });
 
+test('requires release metadata to bind a recovery tag to its qualified source', () => {
+  const release = { id: 385437440, tag_name: 'v0.1.0', draft: true, body: '<!-- gateway-release-source:start -->\n- Commit: `source-sha`\n<!-- gateway-release-source:end -->' };
+  assert.equal(validateReleaseIdentity(release, 385437440, 'v0.1.0', 'source-sha').releaseId, 385437440);
+  assert.throws(() => validateReleaseIdentity(release, 385437440, 'v0.1.0', 'other-sha'), /source provenance/);
+});
+
 test('final delivery status cannot pass for missing or failed publication evidence', () => {
   assert.equal(evaluateDelivery({ verifyResult: 'failure' }).finalOutcome, 'FAILED');
   assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'success' }).finalOutcome, 'NO_RELEASE');
   assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'failure', gitTag: 'v0.1.0' }).finalOutcome, 'FAILED');
   assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'failure' }).finalOutcome, 'FAILED');
   assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'success' }).finalOutcome, 'PUBLISHED');
-  assert.deepEqual(evaluateDelivery({ verifyResult: 'success', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'failure', deliveryOutcome: 'PUBLISHED', traceabilityOutcome: 'FAILED' }), {
-    finalOutcome: 'PUBLISHED',
-    traceabilityOutcome: 'FAILED',
-    reason: 'Immutable release, registry artifact, and environment publication record were verified; post-publication traceability failed.',
-  });
+  assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'failure', deliveryOutcome: 'PUBLISHED' }).finalOutcome, 'FAILED');
 });

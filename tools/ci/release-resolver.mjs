@@ -9,7 +9,7 @@ export function resolveExactRelease(releases, tag) {
   return validateReleaseIdentity(matches[0], matches[0].id, tag);
 }
 
-export function validateReleaseIdentity(release, releaseId, tag) {
+export function validateReleaseIdentity(release, releaseId, tag, sourceSha) {
   const numericReleaseId = Number(releaseId);
   if (!Number.isSafeInteger(numericReleaseId) || numericReleaseId < 1 || release?.id !== numericReleaseId) {
     throw new Error(`GitHub Release ${tag} did not provide the expected numeric REST release ID.`);
@@ -20,18 +20,21 @@ export function validateReleaseIdentity(release, releaseId, tag) {
   if (typeof release.draft !== 'boolean') {
     throw new Error(`GitHub Release ID ${numericReleaseId} did not provide a draft state.`);
   }
+  if (sourceSha && (!release.body?.includes('<!-- gateway-release-source:start -->') || !release.body.includes(`- Commit: \`${sourceSha}\``))) {
+    throw new Error(`GitHub Release ID ${numericReleaseId} has no matching immutable source provenance.`);
+  }
 
   return { releaseId: numericReleaseId, tag: release.tag_name, draft: release.draft };
 }
 
 if (import.meta.main) {
-  const [first, second, third, fourth] = process.argv.slice(2);
+  const [first, second, third, fourth, fifth] = process.argv.slice(2);
   if (first === '--verify') {
     if (!second || !third || !fourth) {
       throw new Error('Usage: node tools/ci/release-resolver.mjs --verify <release.json> <release-id> <tag>');
     }
     const release = JSON.parse(await readFile(second, 'utf8'));
-    process.stdout.write(`${JSON.stringify(validateReleaseIdentity(release, third, fourth))}\n`);
+    process.stdout.write(`${JSON.stringify(validateReleaseIdentity(release, third, fourth, fifth))}\n`);
     process.exit();
   }
 
