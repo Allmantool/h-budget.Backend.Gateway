@@ -10,6 +10,14 @@ function releaseIdentity(release) {
   };
 }
 
+export function githubReleaseId(releases) {
+  const githubReleases = releases?.filter(release => release.name === 'GitHub release') ?? [];
+  if (githubReleases.length !== 1 || !Number.isSafeInteger(githubReleases[0].id)) {
+    throw new Error('semantic-release completed without one numeric GitHub Release ID.');
+  }
+  return githubReleases[0].id;
+}
+
 async function updateObservation(context, update) {
   const file = process.env.GATEWAY_RELEASE_DECISION_FILE;
   if (!file) return;
@@ -46,5 +54,6 @@ export async function success(_, context) {
   await updateObservation(context, {
     phase: 'released',
     nextRelease: releaseIdentity(context.nextRelease),
+    releaseId: githubReleaseId(context.releases),
   });
 }
