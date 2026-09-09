@@ -1,5 +1,5 @@
-name: Gateway Release
-run-name: Gateway release ${{ github.sha }}
+name: Gateway Build & Release
+run-name: Gateway Build & Release — master
 
 on:
   push:
@@ -15,14 +15,14 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify release candidate
+    name: Verify master quality
     if: ${{ github.event_name == 'push' || github.ref == 'refs/heads/master' }}
     uses: ./.github/workflows/ci-common.yml
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   publish:
-    name: Publish GitHub Release
+    name: Create semantic tag and draft release
     if: ${{ needs.verify.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -62,11 +62,14 @@ jobs:
       - id: publish
         name: Create immutable tag and GitHub Release
         env:
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_TOKEN: ${{ github.token }}
+          # This PAT is intentionally used instead of GITHUB_TOKEN: GitHub suppresses
+          # workflow runs caused by events authenticated with GITHUB_TOKEN.
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$GH_TOKEN" || { echo 'GH_PAT is required to create the tag that starts Gateway Deployment.' >&2; exit 1; }
           decision_file="$RUNNER_TEMP/gateway-release-decision.json"
           rm -f "$decision_file"
           export GATEWAY_RELEASE_DECISION_FILE="$decision_file"
@@ -115,6 +118,19 @@ jobs:
           test "$release_sha" = "$(git rev-parse HEAD)"
           release_id="$(jq -r '.releaseId // empty' <<< "$decision")"
           [[ "$release_id" =~ ^[1-9][0-9]*$ ]] || { echo 'Release creation completed without a numeric REST release ID.' >&2; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" --jq '.body' > release-notes.md
+          sed '/<!-- gateway-release-source:start -->/,/<!-- gateway-release-source:end -->/d' release-notes.md > updated-release-notes.md
+          cat >> updated-release-notes.md <<EOF
+
+          <!-- gateway-release-source:start -->
+          ## Gateway release source
+
+          - Commit: \`$release_sha\`
+          - Master quality check: \`Verify master quality / Confirm common Gateway quality checks\`
+          <!-- gateway-release-source:end -->
+          EOF
+          jq -n --rawfile body updated-release-notes.md '{body: $body}' > release-update.json
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" --input release-update.json > /dev/null
           {
             echo "decision=$(jq -r '.decision' <<< "$decision")"
             echo "release_type=$(jq -r '.releaseType // empty' <<< "$decision")"
@@ -133,53 +149,3 @@ jobs:
           - Tag: \`$release_tag\`
           - Source SHA: \`$release_sha\`
           EOF
-
-  deliver:
-    name: Deliver Gateway v${{ needs.publish.outputs.release_version }}
-    if: ${{ needs.publish.result == 'success' && needs.publish.outputs.release_tag != '' }}
-    needs: publish
-    permissions:
-      contents: write
-      deployments: read
-      pull-requests: write
-    uses: ./.github/workflows/release-tag.yml
-    with:
-      release_tag: ${{ needs.publish.outputs.release_tag }}
-      release_sha: ${{ needs.publish.outputs.release_sha }}
-      release_id: ${{ needs.publish.outputs.release_id }}
-      redeploy: false
-      release_decision: ${{ needs.publish.outputs.decision }}
-      release_type: ${{ needs.publish.outputs.release_type }}
-      previous_version: ${{ needs.publish.outputs.previous_version }}
-    secrets: inherit
-
-  delivery-result:
-    name: Report Gateway delivery result
-    if: ${{ always() }}
-    needs: [verify, publish, deliver]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Check out release reporting scripts
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Evaluate final delivery result
-        env:
-          VERIFY_RESULT: ${{ needs.verify.result }}
-          PUBLISH_RESULT: ${{ needs.publish.result }}
-          RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
-          DELIVERY_RESULT: ${{ needs.deliver.result }}
-          DELIVERY_OUTCOME: ${{ needs.deliver.outputs.final_outcome }}
-          TRACEABILITY_OUTCOME: ${{ needs.deliver.outputs.traceability_outcome }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          evidence="$(jq -cn --arg verifyResult "$VERIFY_RESULT" --arg publishResult "$PUBLISH_RESULT" --arg gitTag "$RELEASE_TAG" --arg deliveryResult "$DELIVERY_RESULT" --arg deliveryOutcome "$DELIVERY_OUTCOME" --arg traceabilityOutcome "$TRACEABILITY_OUTCOME" '{verifyResult: $verifyResult, publishResult: $publishResult, gitTag: $gitTag, deliveryResult: $deliveryResult, deliveryOutcome: $deliveryOutcome, traceabilityOutcome: $traceabilityOutcome}')"
-          result="$(DELIVERY_EVIDENCE="$evidence" node tools/ci/delivery-result.mjs)"
-          printf '## Gateway final delivery: %s\n\n%s\n' "$(jq -r '.finalOutcome' <<< "$result")" "$(jq -r '.reason' <<< "$result")" >> "$GITHUB_STEP_SUMMARY"
-          case "$(jq -r '.finalOutcome' <<< "$result")" in
-            NO_RELEASE|PUBLISHED) ;;
-            *) exit 1 ;;
-          esac

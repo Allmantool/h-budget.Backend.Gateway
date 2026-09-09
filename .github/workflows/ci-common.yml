@@ -4,7 +4,7 @@ on:
   workflow_call:
     secrets:
       SONAR_TOKEN:
-        required: false
+        required: true
 
 permissions:
   contents: read
@@ -157,24 +157,11 @@ jobs:
       - name: Verify invalid production TLS configuration fails
         run: tools/ci/container-smoke.sh --image homebudget-backend-gateway:ci --mode invalid-config
 
-  sonar-mode:
-    name: Determine optional Sonar mode
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      enabled: ${{ steps.mode.outputs.enabled }}
-    steps:
-      - id: mode
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: echo "enabled=$([[ -n \"${SONAR_TOKEN:-}\" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-
   sonar:
-    name: Optional Sonar analysis
-    if: ${{ needs.sonar-mode.outputs.enabled == 'true' }}
+    name: Enforce Sonar quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [build-and-test, sonar-mode]
+    needs: build-and-test
     steps:
       - name: Check out merge candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -186,6 +173,15 @@ jobs:
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: 10.0.300
+      - name: Download verified coverage evidence
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: gateway-test-results-${{ github.run_id }}
+          path: test-results
+      - name: Require Sonar credentials
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: test -n "$SONAR_TOKEN"
       - name: Run configured Sonar analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -201,7 +197,7 @@ jobs:
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [validate-configuration, build-and-test, security, workflow-policy, docker-verify]
+    needs: [validate-configuration, build-and-test, security, workflow-policy, docker-verify, sonar]
     steps:
       - name: Check out candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -211,5 +207,5 @@ jobs:
       - name: Evaluate every required common-quality result
         env:
           GATE_RESULTS: ${{ toJson(needs) }}
-          GATE_REQUIRED_JOBS: validate-configuration,build-and-test,security,workflow-policy,docker-verify
+          GATE_REQUIRED_JOBS: validate-configuration,build-and-test,security,workflow-policy,docker-verify,sonar
         run: node tools/ci/pr-gate.mjs

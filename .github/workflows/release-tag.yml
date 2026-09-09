@@ -1,58 +1,15 @@
 name: Gateway Deployment
-run-name: ${{ inputs.redeploy && 'Redeploy' || 'Deploy' }} ${{ inputs.release_tag }}
+run-name: Gateway Deploy ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
 
 on:
-  workflow_call:
-    inputs:
-      release_tag:
-        required: true
-        type: string
-      release_sha:
-        required: true
-        type: string
-      release_id:
-        required: true
-        type: string
-      redeploy:
-        required: true
-        type: boolean
-      release_decision:
-        required: false
-        type: string
-      release_type:
-        required: false
-        type: string
-      previous_version:
-        required: false
-        type: string
-    outputs:
-      final_outcome:
-        value: ${{ jobs.delivery-result.outputs.final_outcome }}
-      image_digest:
-        value: ${{ jobs.delivery-result.outputs.image_digest }}
-      deployment_id:
-        value: ${{ jobs.delivery-result.outputs.deployment_id }}
-      traceability_outcome:
-        value: ${{ jobs.publication-report.outputs.traceability_outcome }}
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing immutable vMAJOR.MINOR.PATCH tag to deploy.
+        description: Existing immutable vMAJOR.MINOR.PATCH tag to recover.
         required: true
         type: string
-      release_sha:
-        description: Expected full commit SHA for an automatically dispatched release.
-        required: false
-        type: string
-      release_id:
-        description: Numeric REST ID of the existing GitHub Release to recover.
-        required: true
-        type: string
-      redeploy:
-        description: Distinguish a manual stable-tag redeploy from the initial deployment.
-        default: true
-        required: false
-        type: boolean
 
 permissions:
   contents: read
@@ -63,14 +20,13 @@ concurrency:
 
 env:
   GATEWAY_IMAGE_REPOSITORY: allmantool/homebudget-backend-gateway
+  MASTER_QUALITY_CHECK: Verify master quality / Confirm common Gateway quality checks
 
 jobs:
   verify-release:
     name: Verify release identity
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Draft releases are visible only to a token with release-management access.
-    # Keep this scope on the trusted delivery verifier rather than the workflow.
+    timeout-minutes: 12
     permissions:
       contents: write
     outputs:
@@ -79,50 +35,40 @@ jobs:
       release_sha: ${{ steps.release.outputs.release_sha }}
       release_id: ${{ steps.release.outputs.release_id }}
     steps:
-      - name: Check out immutable release tag
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           fetch-depth: 0
           persist-credentials: false
-
       - id: release
-        name: Validate tag, source, and GitHub Release
-        shell: bash
+        name: Validate tag, master quality, and release metadata
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          EXPECTED_RELEASE_SHA: ${{ inputs.release_sha }}
-          RELEASE_ID: ${{ inputs.release_id }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
           git fetch --force --tags origin
           git fetch origin master --depth=1
           release_sha="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
           test "$(git rev-parse HEAD)" = "$release_sha"
-          test -z "$EXPECTED_RELEASE_SHA" || test "$EXPECTED_RELEASE_SHA" = "$release_sha"
           git merge-base --is-ancestor "$release_sha" origin/master
-          response_file="$RUNNER_TEMP/github-release-response.txt"
-          if ! gh api -i "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$response_file"; then
-            awk '/^HTTP\/|^[Xx]-[Gg]ithub-[Rr]equest-[Ii]d:|^[Xx]-[Aa]ccepted-[Gg]ithub-[Pp]ermissions:|"message"|"status"/' "$response_file" >&2 || true
-            if grep -q '^HTTP/.* 403 ' "$response_file"; then
-              echo "GitHub Release API access was denied; this is not a missing release." >&2
+          gh api "repos/$GITHUB_REPOSITORY/commits/$release_sha/check-runs?per_page=100" > check-runs.json
+          jq -e --arg name "$MASTER_QUALITY_CHECK" '[.check_runs[] | select(.name == $name and .app.slug == "github-actions" and .status == "completed" and .conclusion == "success")] | length > 0' check-runs.json > /dev/null || {
+            echo "No successful trusted master-quality check named '$MASTER_QUALITY_CHECK' exists for $release_sha." >&2; exit 1; }
+          release_id=''
+          for _ in $(seq 1 12); do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.ndjson
+            jq -s 'flatten' releases.ndjson > releases.json
+            if node tools/ci/release-resolver.mjs releases.json "$RELEASE_TAG" "$release_sha" > resolved.json 2> resolver-error.txt; then
+              candidate_id="$(jq -er '.releaseId' resolved.json)"
+              gh api "repos/$GITHUB_REPOSITORY/releases/$candidate_id" > release.json
+              if node tools/ci/release-resolver.mjs --verify release.json "$candidate_id" "$RELEASE_TAG" "$release_sha" > /dev/null 2> resolver-error.txt; then release_id="$candidate_id"; break; fi
             fi
-            echo "Unable to read GitHub Release ID $RELEASE_ID for $RELEASE_TAG." >&2
-            exit 1
-          fi
-          release="$(awk 'BEGIN { body = 0 } /^\r?$/ { body = 1; next } body { print }' "$response_file")"
-          release_json="$RUNNER_TEMP/github-release.json"
-          printf '%s\n' "$release" > "$release_json"
-          node tools/ci/release-resolver.mjs --verify "$release_json" "$RELEASE_ID" "$RELEASE_TAG" > /dev/null
-          {
-            echo "release_tag=$RELEASE_TAG"
-            echo "release_version=${RELEASE_TAG#v}"
-            echo "release_sha=$release_sha"
-            echo "release_id=$RELEASE_ID"
-          } >> "$GITHUB_OUTPUT"
+            sleep 5
+          done
+          [[ -n "$release_id" ]] || { echo "Release metadata for $RELEASE_TAG was not available with matching source provenance after 60 seconds." >&2; cat resolver-error.txt >&2 || true; exit 1; }
+          { echo "release_tag=$RELEASE_TAG"; echo "release_version=${RELEASE_TAG#v}"; echo "release_sha=$release_sha"; echo "release_id=$release_id"; } >> "$GITHUB_OUTPUT"
 
   build-image:
     name: Build Gateway image
@@ -130,18 +76,13 @@ jobs:
     timeout-minutes: 35
     needs: verify-release
     steps:
-      - name: Check out immutable release tag
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.verify-release.outputs.release_tag }}
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-
-      - name: Build Gateway image archive
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: ./dockerfile
@@ -149,27 +90,21 @@ jobs:
           build-args: |
             BUILD_VERSION=${{ needs.verify-release.outputs.release_version }}
             BUILD_SHA=${{ needs.verify-release.outputs.release_sha }}
-          tags: |
-            ${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}
-            ${{ env.GATEWAY_IMAGE_REPOSITORY }}:sha-${{ needs.verify-release.outputs.release_sha }}
+          tags: ${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}
           labels: |
-            org.opencontainers.image.title=homebudget-backend-gateway
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.verify-release.outputs.release_sha }}
             org.opencontainers.image.version=${{ needs.verify-release.outputs.release_version }}
           outputs: type=docker,dest=/tmp/gateway-image.tar
           cache-from: type=gha,scope=gateway-release
           cache-to: type=gha,mode=max,scope=gateway-release
-
-      - name: Upload Gateway image artifact
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: gateway-image-${{ needs.verify-release.outputs.release_tag }}
           path: /tmp/gateway-image.tar
           retention-days: 1
           if-no-files-found: error
-
-      - name: Smoke-test the exact image candidate
+      - name: Smoke-test exact candidate
         run: |
           chmod +x tools/ci/container-smoke.sh
           docker load --input /tmp/gateway-image.tar
@@ -177,7 +112,7 @@ jobs:
           tools/ci/container-smoke.sh --image "${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}" --mode invalid-config
 
   push-image:
-    name: Publish Gateway ${{ needs.verify-release.outputs.release_tag || inputs.release_tag }} to Docker Hub
+    name: Publish Gateway ${{ needs.verify-release.outputs.release_tag }} to Docker Hub
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [verify-release, build-image]
@@ -186,353 +121,96 @@ jobs:
     outputs:
       image_digest: ${{ steps.publish.outputs.image_digest }}
     steps:
-      - name: Download Gateway image artifact
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: gateway-image-${{ needs.verify-release.outputs.release_tag }}
           path: docker-artifacts
-
-      - name: Load Gateway image
-        run: docker load --input docker-artifacts/gateway-image.tar
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - run: docker load --input docker-artifacts/gateway-image.tar
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - id: publish
         name: Validate and publish immutable image tags
-        shell: bash
         env:
           IMAGE_NAME: ${{ env.GATEWAY_IMAGE_REPOSITORY }}
           RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
           RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
         run: |
           set -euo pipefail
-          version_ref="$IMAGE_NAME:$RELEASE_VERSION"
-          sha_ref="$IMAGE_NAME:sha-$RELEASE_SHA"
-          inspect_tag() {
-            local image_ref="$1"
-            local inspection=''
-            if inspection="$(docker manifest inspect "$image_ref" 2>&1)"; then
-              docker pull "$image_ref" >/dev/null
-              local revision version
-              revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image_ref")"
-              version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image_ref")"
-              [[ "$revision" == "$RELEASE_SHA" && "$version" == "$RELEASE_VERSION" ]] || { echo "Existing image tag points to a different release: $image_ref" >&2; exit 1; }
-              echo true
-            elif [[ "$inspection" == *'no such manifest'* || "$inspection" == *'manifest unknown'* ]]; then
-              echo false
-            else
-              echo "Unable to confirm Docker image tag is unused: $inspection" >&2
-              exit 1
-            fi
-          }
-          version_exists="$(inspect_tag "$version_ref")"
-          sha_exists="$(inspect_tag "$sha_ref")"
-          if [[ "$version_exists" == false && "$sha_exists" == false ]]; then
-            docker push "$version_ref"
-            docker push "$sha_ref"
-          elif [[ "$version_exists" == true && "$sha_exists" == false ]]; then
-            docker pull "$version_ref" >/dev/null
-            docker tag "$version_ref" "$sha_ref"
-            docker push "$sha_ref"
-          elif [[ "$version_exists" == false && "$sha_exists" == true ]]; then
-            docker pull "$sha_ref" >/dev/null
-            docker tag "$sha_ref" "$version_ref"
-            docker push "$version_ref"
-          fi
-          docker pull "$version_ref" >/dev/null
-          docker pull "$sha_ref" >/dev/null
-          digest="$(docker image inspect "$version_ref" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
-          test -n "$digest"
-          sha_digest="$(docker image inspect "$sha_ref" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
-          test "$digest" = "$sha_digest"
-          {
-            echo "image_digest=$digest"
-          } >> "$GITHUB_OUTPUT"
+          version_ref="$IMAGE_NAME:$RELEASE_VERSION"; sha_ref="$IMAGE_NAME:sha-$RELEASE_SHA"
+          inspect_tag() { local ref="$1" output; if output="$(docker manifest inspect "$ref" 2>&1)"; then docker pull "$ref" >/dev/null; [[ "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ref")" == "$RELEASE_SHA" && "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$ref")" == "$RELEASE_VERSION" ]] || { echo "Conflicting immutable image: $ref" >&2; exit 1; }; echo true; elif [[ "$output" == *'no such manifest'* || "$output" == *'manifest unknown'* ]]; then echo false; else echo "$output" >&2; exit 1; fi; }
+          version_exists="$(inspect_tag "$version_ref")"; sha_exists="$(inspect_tag "$sha_ref")"
+          if [[ "$version_exists" == false && "$sha_exists" == false ]]; then docker tag "$version_ref" "$sha_ref"; docker push "$version_ref"; docker push "$sha_ref"; elif [[ "$version_exists" == true && "$sha_exists" == false ]]; then docker pull "$version_ref" >/dev/null; docker tag "$version_ref" "$sha_ref"; docker push "$sha_ref"; elif [[ "$version_exists" == false && "$sha_exists" == true ]]; then docker pull "$sha_ref" >/dev/null; docker tag "$sha_ref" "$version_ref"; docker push "$version_ref"; fi
+          docker pull "$version_ref" >/dev/null; docker pull "$sha_ref" >/dev/null
+          digest="$(docker image inspect "$version_ref" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"; sha_digest="$(docker image inspect "$sha_ref" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
+          test -n "$digest" && test "$digest" = "$sha_digest"; echo "image_digest=$digest" >> "$GITHUB_OUTPUT"
 
-  record-deployment:
-    name: Finalize GitHub Release ${{ needs.verify-release.outputs.release_tag || inputs.release_tag }}
+  finalize-release:
+    name: Finalize GitHub Release ${{ needs.verify-release.outputs.release_tag }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: ${{ needs.verify-release.result == 'success' && needs.build-image.result == 'success' && needs.push-image.result == 'success' && needs.verify-release.outputs.release_id != '' && needs.push-image.outputs.image_digest != '' }}
     needs: [verify-release, build-image, push-image]
+    if: ${{ needs.verify-release.result == 'success' && needs.build-image.result == 'success' && needs.push-image.result == 'success' }}
     permissions:
       contents: write
     steps:
-      - name: Update release traceability and retain metadata
-        shell: bash
+      - name: Attach publication evidence and finalize release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.verify-release.outputs.release_tag }}
-          RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
           RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
           RELEASE_ID: ${{ needs.verify-release.outputs.release_id }}
           IMAGE_REF: ${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}
           IMAGE_DIGEST: ${{ needs.push-image.outputs.image_digest }}
         run: |
           set -euo pipefail
-          mkdir -p release-artifacts
-          cat > release-artifacts/release-metadata.json <<EOF
-          {"release_tag":"$RELEASE_TAG","release_version":"$RELEASE_VERSION","commit_sha":"$RELEASE_SHA","workflow_run_url":"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID","image_ref":"$IMAGE_REF","image_digest":"$IMAGE_DIGEST"}
-          EOF
           gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.body' > release-notes.md
-          sed '/<!-- gateway-release-trace:start -->/,/<!-- gateway-release-trace:end -->/d' release-notes.md > updated-release-notes.md
-          cat >> updated-release-notes.md <<EOF
+          sed '/<!-- gateway-release-trace:start -->/,/<!-- gateway-release-trace:end -->/d' release-notes.md > updated-notes.md
+          cat >> updated-notes.md <<EOF
 
           <!-- gateway-release-trace:start -->
           ## Gateway publication traceability
-
           - Commit: \`$RELEASE_SHA\`
           - Publication: Docker Hub registry publication
           - Environment: [production registry publication]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/deployments/activity_log?environment=production)
-          - Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT
+          - Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
           - Image: \`$IMAGE_REF@$IMAGE_DIGEST\`
           <!-- gateway-release-trace:end -->
           EOF
-          jq -n --rawfile body updated-release-notes.md '{body: $body, draft: false}' > release-update.json
+          jq -n --rawfile body updated-notes.md '{body: $body, draft: false}' > release-update.json
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --input release-update.json > /dev/null
 
-      - name: Upload release metadata
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-        with:
-          name: release-${{ needs.verify-release.outputs.release_tag }}
-          path: release-artifacts/release-metadata.json
-          retention-days: 30
-          if-no-files-found: error
-
   delivery-result:
-    name: Report Gateway ${{ needs.verify-release.outputs.release_tag || inputs.release_tag }} publication
+    name: Report Gateway ${{ needs.verify-release.outputs.release_tag }} publication
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [verify-release, build-image, push-image, record-deployment]
+    needs: [verify-release, build-image, push-image, finalize-release]
     permissions:
       contents: read
       deployments: read
-    outputs:
-      final_outcome: ${{ steps.report.outputs.final_outcome }}
-      image_digest: ${{ steps.report.outputs.image_digest }}
-      deployment_id: ${{ steps.report.outputs.deployment_id }}
     steps:
-      - id: report
-        name: Read back release, registry, and environment evidence
+      - name: Read back release, registry, and environment evidence
         env:
           GH_TOKEN: ${{ github.token }}
           VERIFY_RESULT: ${{ needs.verify-release.result }}
           BUILD_RESULT: ${{ needs.build-image.result }}
           PUBLISH_RESULT: ${{ needs.push-image.result }}
-          FINALIZE_RESULT: ${{ needs.record-deployment.result }}
+          FINALIZE_RESULT: ${{ needs.finalize-release.result }}
           RELEASE_TAG: ${{ needs.verify-release.outputs.release_tag }}
           RELEASE_VERSION: ${{ needs.verify-release.outputs.release_version }}
           RELEASE_SHA: ${{ needs.verify-release.outputs.release_sha }}
           RELEASE_ID: ${{ needs.verify-release.outputs.release_id }}
           IMAGE_REPOSITORY: ${{ env.GATEWAY_IMAGE_REPOSITORY }}
           IMAGE_DIGEST: ${{ needs.push-image.outputs.image_digest }}
-          RELEASE_DECISION: ${{ inputs.release_decision }}
-          RELEASE_TYPE: ${{ inputs.release_type }}
-          PREVIOUS_VERSION: ${{ inputs.previous_version }}
-        shell: bash
         run: |
           set -euo pipefail
-          final_outcome='FAILED'
-          reason='A mandatory delivery stage did not succeed.'
-          deployment_id=''
-          deployment_status=''
-          release_id=''
-          release_state=''
-          release_url=''
-          release_published_at=''
-          release_id_input="${RELEASE_ID:-}"
-          image_version_tag="${IMAGE_REPOSITORY}:${RELEASE_VERSION:-}"
-          image_sha_tag="${IMAGE_REPOSITORY}:sha-${RELEASE_SHA:-}"
-          image_digest_reference="${IMAGE_REPOSITORY}@${IMAGE_DIGEST:-}"
-          workflow_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
-          source_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$RELEASE_SHA"
-          environment_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/deployments/activity_log?environment=production"
-          verify_remote() {
-            test -n "$RELEASE_TAG"
-            test -n "$RELEASE_SHA"
-            [[ "$release_id_input" =~ ^[1-9][0-9]*$ ]]
-            test -n "$IMAGE_DIGEST"
-            release_info="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id_input")"
-            jq -e --argjson releaseId "$release_id_input" --arg releaseTag "$RELEASE_TAG" '.id == $releaseId and .tag_name == $releaseTag and .draft == false' <<< "$release_info" >/dev/null
-            release_url="$(jq -er '.html_url' <<< "$release_info")"
-            release_published_at="$(jq -er '.published_at' <<< "$release_info")"
-            release_id="$release_id_input"
-            release_state='final'
-            deployment_id="$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=production&sha=$RELEASE_SHA&per_page=100" --jq '[.[] | select(.environment == "production") | .id] | .[0] // empty')"
-            test -n "$deployment_id"
-            deployment_status="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses?per_page=1" --jq '.[0].state // empty')"
-            test "$deployment_status" = success
-          }
-          if [[ "$VERIFY_RESULT" == 'success' && "$BUILD_RESULT" == 'success' && "$PUBLISH_RESULT" == 'success' && "$FINALIZE_RESULT" == 'success' ]]; then
-            if verify_remote; then
-              final_outcome='PUBLISHED'
-              reason='Immutable release, matching registry tags, and production registry-publication record were read back successfully.'
-            else
-              reason='A required remote release, registry, or Environment readback failed.'
-            fi
-          fi
-          jq -n \
-            --arg sourceSha "$RELEASE_SHA" \
-            --arg workflowSha "$GITHUB_SHA" \
-            --arg runId "$GITHUB_RUN_ID" \
-            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
-            --arg previousVersion "$PREVIOUS_VERSION" \
-            --arg releaseType "$RELEASE_TYPE" \
-            --arg decision "$RELEASE_DECISION" \
-            --arg reason "$reason" \
-            --arg gitTag "$RELEASE_TAG" \
-            --arg version "$RELEASE_VERSION" \
-            --arg releaseId "$release_id" \
-            --arg releaseState "$release_state" \
-            --arg releaseUrl "$release_url" \
-            --arg releasePublishedAt "$release_published_at" \
-            --arg sourceUrl "$source_url" \
-            --arg workflowUrl "$workflow_url" \
-            --arg environmentUrl "$environment_url" \
-            --arg imageRepository "$IMAGE_REPOSITORY" \
-            --arg imageVersionTag "$image_version_tag" \
-            --arg imageShaTag "$image_sha_tag" \
-            --arg imageDigestReference "$image_digest_reference" \
-            --arg imageDigest "$IMAGE_DIGEST" \
-            --arg environment production \
-            --arg operationKind registry-publication \
-            --arg deploymentId "$deployment_id" \
-            --arg deploymentStatus "$deployment_status" \
-            --arg finalOutcome "$final_outcome" \
-            --arg qualification "$VERIFY_RESULT" \
-            --arg build "$BUILD_RESULT" \
-            --arg registryPublication "$PUBLISH_RESULT" \
-            --arg releaseFinalization "$FINALIZE_RESULT" \
-            '{sourceSha: $sourceSha, workflowSha: $workflowSha, runId: $runId, runAttempt: $runAttempt, previousVersion: $previousVersion, releaseType: $releaseType, version: $version, gitTag: $gitTag, decision: $decision, reason: $reason, releaseId: $releaseId, releaseState: $releaseState, releaseUrl: $releaseUrl, releasePublishedAt: $releasePublishedAt, sourceUrl: $sourceUrl, workflowUrl: $workflowUrl, environmentUrl: $environmentUrl, imageRepository: $imageRepository, imageVersionTag: $imageVersionTag, imageShaTag: $imageShaTag, imageDigestReference: $imageDigestReference, imageDigest: $imageDigest, environment: $environment, operationKind: $operationKind, deploymentId: $deploymentId, deploymentStatus: $deploymentStatus, verification: {qualification: $qualification, build: $build, registryPublication: $registryPublication, releaseFinalization: $releaseFinalization}, finalOutcome: $finalOutcome}' > delivery-report.json
-          {
-            echo "final_outcome=$final_outcome"
-            echo "image_digest=$IMAGE_DIGEST"
-            echo "deployment_id=$deployment_id"
-          } >> "$GITHUB_OUTPUT"
-          cat delivery-report.json >> "$GITHUB_STEP_SUMMARY"
-          test "$final_outcome" = PUBLISHED
-
-      - name: Upload machine-readable delivery report
-        if: ${{ always() }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-        with:
-          name: gateway-delivery-${{ inputs.release_tag }}
-          path: delivery-report.json
-          retention-days: 30
-          if-no-files-found: warn
-
-  publication-report:
-    name: Report Gateway ${{ inputs.release_tag }} traceability
-    if: ${{ needs.delivery-result.outputs.final_outcome == 'PUBLISHED' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: delivery-result
-    permissions:
-      contents: read
-      pull-requests: write
-    outputs:
-      traceability_outcome: ${{ steps.outcome.outputs.traceability_outcome }}
-    steps:
-      - name: Check out trusted publication reporter
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Download verified delivery report
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: gateway-delivery-${{ inputs.release_tag }}
-          path: publication-evidence
-
-      - id: report
-        name: Publish Gateway ${{ inputs.release_tag }} traceability
-        continue-on-error: true
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-        run: |
-          set -euo pipefail
-          report_file='publication-evidence/delivery-report.json'
-          node tools/ci/publication-report.mjs validate "$report_file" > /dev/null
-          RELEASE_SHA="$(jq -er '.sourceSha' "$report_file")"
-          git fetch --force --tags origin
-          previous_tag="$(git describe --tags --abbrev=0 "$RELEASE_SHA^" 2>/dev/null || true)"
-          if [[ -z "$previous_tag" || ! "$previous_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            jq '.traceability = {outcome: "NO_BASELINE", reason: "No earlier stable tag was available; no pull-request comments were guessed.", pullRequestComments: []}' "$report_file" > updated-delivery-report.json
-            mv updated-delivery-report.json "$report_file"
-            node tools/ci/publication-report.mjs summary "$report_file" <(printf '[]') >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          git rev-list --reverse "$previous_tag..$RELEASE_SHA" > release-commits.txt
-          : > associated-pull-requests.ndjson
-          while IFS= read -r commit; do
-            gh api --paginate -H 'X-GitHub-Api-Version: 2022-11-28' "repos/$GITHUB_REPOSITORY/commits/$commit/pulls?per_page=100" --jq '.[]' >> associated-pull-requests.ndjson
-          done < release-commits.txt
-          jq -s '.' associated-pull-requests.ndjson > associated-pull-requests.json
-          node tools/ci/publication-report.mjs select-prs associated-pull-requests.json "$GITHUB_REPOSITORY" master > release-pull-requests.json
-          : > publication-comments.ndjson
-          while IFS= read -r pull_request; do
-            number="$(jq -r '.number' <<< "$pull_request")"
-            url="$(jq -r '.url' <<< "$pull_request")"
-            gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$number/comments?per_page=100" --jq '.[]' | jq -s '.' > pull-request-comments.json
-            plan="$(node tools/ci/publication-report.mjs comment-plan pull-request-comments.json "$report_file")"
-            action="$(jq -r '.action' <<< "$plan")"
-            comment_url="$(jq -r '.commentUrl // empty' <<< "$plan")"
-            if [[ "$action" == create || "$action" == update ]]; then
-              jq -n --arg body "$(jq -r '.body' <<< "$plan")" '{body: $body}' > comment-payload.json
-              if [[ "$action" == create ]]; then
-                if ! response="$(gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$number/comments" --input comment-payload.json)"; then
-                  gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$number/comments?per_page=100" --jq '.[]' | jq -s '.' > pull-request-comments.json
-                  retry_plan="$(node tools/ci/publication-report.mjs comment-plan pull-request-comments.json "$report_file")"
-                  [[ "$(jq -r '.action' <<< "$retry_plan")" == unchanged ]] || { echo "Unable to create publication comment for PR #$number." >&2; exit 1; }
-                  response="$(jq -n --arg url "$(jq -r '.commentUrl' <<< "$retry_plan")" '{html_url: $url}')"
-                  action='recovered-after-ambiguous-create'
-                fi
-              else
-                response="$(gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$(jq -r '.commentId' <<< "$plan")" --input comment-payload.json)"
-              fi
-              comment_url="$(jq -er '.html_url' <<< "$response")"
-            fi
-            jq -n --argjson number "$number" --arg url "$url" --arg action "$action" --arg commentUrl "$comment_url" '{number: $number, url: $url, action: $action, commentUrl: $commentUrl}' >> publication-comments.ndjson
-          done < <(jq -c '.[]' release-pull-requests.json)
-          jq -s '.' publication-comments.ndjson > publication-comments.json
-          jq --slurpfile comments publication-comments.json --arg previousTag "$previous_tag" '.traceability = {outcome: "PUBLISHED", previousTag: $previousTag, pullRequestComments: $comments[0]}' "$report_file" > updated-delivery-report.json
-          mv updated-delivery-report.json "$report_file"
-          node tools/ci/publication-report.mjs summary "$report_file" publication-comments.json >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload publication traceability evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-        with:
-          name: gateway-publication-traceability-${{ inputs.release_tag }}
-          path: publication-evidence/delivery-report.json
-          retention-days: 30
-          if-no-files-found: warn
-
-      - id: outcome
-        name: Confirm publication traceability
-        if: ${{ always() }}
-        shell: bash
-        env:
-          REPORT_OUTCOME: ${{ steps.report.outcome }}
-        run: |
-          set -euo pipefail
-          if [[ "$REPORT_OUTCOME" == success ]]; then
-            echo 'traceability_outcome=PUBLISHED' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo 'traceability_outcome=FAILED' >> "$GITHUB_OUTPUT"
-          {
-            echo '## Gateway publication traceability: FAILED'
-            echo
-            echo "Docker publication remains verified as \`PUBLISHED\`; PR comment/reporting failed and can be retried without allocating another version."
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit 1
+          [[ "$VERIFY_RESULT" == success && "$BUILD_RESULT" == success && "$PUBLISH_RESULT" == success && "$FINALIZE_RESULT" == success ]]
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"; jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and .draft == false' <<< "$release" > /dev/null
+          docker pull "$IMAGE_REPOSITORY:$RELEASE_VERSION" >/dev/null; docker pull "$IMAGE_REPOSITORY:sha-$RELEASE_SHA" >/dev/null
+          digest="$(docker image inspect "$IMAGE_REPOSITORY:$RELEASE_VERSION" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"; sha_digest="$(docker image inspect "$IMAGE_REPOSITORY:sha-$RELEASE_SHA" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
+          test "$digest" = "$IMAGE_DIGEST" && test "$digest" = "$sha_digest"
+          deployment_id="$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=production&sha=$RELEASE_SHA&per_page=100" --jq '[.[] | select(.environment == "production") | .id] | .[0] // empty')"; test -n "$deployment_id"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses?per_page=1" --jq '.[0].state // empty')" = success
+          printf '## Gateway %s published to Docker Hub\n\n- Release: %s\n- Source: %s/%s/commit/%s\n- Image: `%s@%s`\n' "$RELEASE_TAG" "$(jq -r '.html_url' <<< "$release")" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$RELEASE_SHA" "$IMAGE_REPOSITORY" "$digest" >> "$GITHUB_STEP_SUMMARY"

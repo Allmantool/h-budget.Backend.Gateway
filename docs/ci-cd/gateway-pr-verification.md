@@ -1,5 +1,7 @@
 # Gateway PR Verification and Merge Protection
 
+> Current policy: Sonar is mandatory and included in the common-quality aggregate. A missing token, skipped/cancelled job, scan failure, or failed quality gate fails `Gateway PR Gate`. Read-only inspection on 2026-09-09 found no `master` branch protection/ruleset, so an owner must require the observed GitHub Actions `Gateway PR Gate` check before this workflow becomes live merge enforcement.
+
 Every PR to `master` provides purpose, acceptance criteria, implementation summary, updated tests or verification evidence, compatibility/operational impact, and expected release impact. For non-trivial executable changes, retain `requirement -> acceptance criterion -> implementation -> test/evidence`. Template checkboxes support review but never waive automation.
 
 `Gateway PR Verification` runs for opened, synchronized, reopened, ready-for-review, title-edited, and label-edited PR events. It calls `Gateway Common Quality` and checks out `github.sha`, GitHub's tested merge candidate; the PR policy summary records both PR head SHA and tested candidate SHA. It has no path exclusions. PR code runs under `pull_request` with `contents: read`, never `pull_request_target`.

@@ -1,5 +1,7 @@
 # Gateway Release Runbook
 
+> Current normal path: PR verification -> master build/release -> automatically tag-triggered deployment. `Gateway Build & Release — master` only creates the semantic tag/draft release provenance; `Gateway Deploy vX.Y.Z` owns Docker publication, production Environment evidence, and release finalization. Do not dispatch for a new version. Dispatch only an existing immutable tag to recover a partial delivery; it verifies the exact qualified source/provenance and converges without moving tags. PR publication comments are no longer part of this path.
+
 ## Normal path
 
 1. Open a PR to `master` and obtain `Gateway PR Gate` for the current merge candidate.

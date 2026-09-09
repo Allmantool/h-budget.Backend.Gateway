@@ -1,5 +1,7 @@
 # Gateway CI/CD Traceability
 
+> Current traceability is the three-workflow chain: required PR gate; qualified master semantic tag/draft provenance; tag-triggered Docker Hub publication, `production` Environment record, and final release trace block. The previous `publication-report`/PR-comment entries below are historical and removed from the active workflow.
+
 | Requirement | Implementation | Evidence |
 | --- | --- | --- |
 | PR intent and release impact | PR template, `release-policy` | conventional title/branch and policy tests |
