@@ -1,10 +1,14 @@
-export const REQUIRED_PR_JOBS = Object.freeze([
-  'release-policy',
+export const REQUIRED_COMMON_JOBS = Object.freeze([
   'validate-configuration',
   'build-and-test',
   'security',
   'workflow-policy',
   'docker-verify',
+]);
+
+export const REQUIRED_PR_JOBS = Object.freeze([
+  'common-quality',
+  'release-policy',
 ]);
 
 export function evaluateGate(results, requiredJobs = REQUIRED_PR_JOBS) {
@@ -26,7 +30,10 @@ if (import.meta.main) {
     process.exitCode = 1;
     process.exit();
   }
-  const evaluation = evaluateGate(results);
+  const requiredJobs = process.env.GATE_REQUIRED_JOBS
+    ? process.env.GATE_REQUIRED_JOBS.split(',')
+    : REQUIRED_PR_JOBS;
+  const evaluation = evaluateGate(results, requiredJobs);
   if (!evaluation.pass) {
     console.error(`Gateway PR Gate blocked by: ${evaluation.blocked.join(', ')}`);
     process.exitCode = 1;

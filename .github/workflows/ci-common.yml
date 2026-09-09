@@ -1,0 +1,215 @@
+name: Gateway Common Quality
+
+on:
+  workflow_call:
+    secrets:
+      SONAR_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-configuration:
+    name: Validate Gateway configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out merge candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate JSON syntax and source-configuration safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t config_files < <(find HomeBudget.Backend.Gateway -maxdepth 1 -type f \( -name 'appsettings*.json' -o -name 'ocelot*.json' \) -print | sort)
+          test "${#config_files[@]}" -gt 0
+          for config_file in "${config_files[@]}"; do jq empty "$config_file"; done
+          node tools/ci/config-safety.mjs "${config_files[@]}"
+
+  build-and-test:
+    name: Build and test Gateway
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out merge candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10.0.300
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+      - name: Restore .NET packages
+        run: dotnet restore HomeBudgetBackendGateway.sln
+      - name: Build solution
+        run: dotnet build HomeBudgetBackendGateway.sln --configuration Release --no-restore --no-incremental
+      - name: Run Gateway tests with coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results
+          dotnet test HomeBudget.Backend.Gateway.Api.Tests/HomeBudget.Backend.Gateway.Api.Tests.csproj --configuration Release --no-build --no-restore --logger 'trx;LogFileName=Gateway.Tests.trx' --results-directory test-results
+          node tools/ci/test-execution.mjs test-results/Gateway.Tests.trx
+          dotnet tool update --global dotnet-coverage --version 18.4.1
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+          dotnet-coverage collect "dotnet test HomeBudget.Backend.Gateway.Api.Tests/HomeBudget.Backend.Gateway.Api.Tests.csproj --configuration Release --no-build --no-restore" -f xml -o test-results/backend-gateway-coverage.xml
+          test -s test-results/backend-gateway-coverage.xml
+      - name: Upload test and coverage diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: gateway-test-results-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 14
+
+  security:
+    name: Enforce dependency security policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out merge candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10.0.300
+          cache: true
+          cache-dependency-path: |
+            Directory.Packages.props
+            **/*.csproj
+      - name: Restore .NET packages
+        run: dotnet restore HomeBudgetBackendGateway.sln
+      - name: Enforce NuGet vulnerability policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet package list --project HomeBudget.Backend.Gateway/HomeBudget.Backend.Gateway.csproj --no-restore --vulnerable --include-transitive --format json > nuget-vulnerability-audit.json
+          node tools/ci/security-policy.mjs nuget-vulnerability-audit.json
+      - name: Use Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.10.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Enforce release-toolchain npm audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm audit --json > npm-audit.json
+          node -e "const audit=require('./npm-audit.json'); if (audit.metadata?.vulnerabilities?.total !== 0) process.exit(1);"
+
+  workflow-policy:
+    name: Validate workflow and policy automation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out merge candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate GitHub Actions workflow syntax
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+      - name: Use Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.10.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Validate release and aggregate-gate fixtures
+        run: |
+          npm ci --ignore-scripts
+          npm run test:release-policy
+
+  docker-verify:
+    name: Build and smoke-test Gateway container
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [validate-configuration, build-and-test, security, workflow-policy]
+    steps:
+      - name: Check out merge candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Build Gateway image candidate
+        run: |
+          docker build -f dockerfile --target test --build-arg BUILD_VERSION=0.0.0-ci --build-arg BUILD_SHA="${{ github.sha }}" .
+          docker build -f dockerfile --target final --build-arg BUILD_VERSION=0.0.0-ci --build-arg BUILD_SHA="${{ github.sha }}" -t homebudget-backend-gateway:ci .
+      - name: Verify safe container startup and forwarding
+        run: |
+          chmod +x tools/ci/container-smoke.sh
+          tools/ci/container-smoke.sh --image homebudget-backend-gateway:ci --mode success
+      - name: Verify invalid production TLS configuration fails
+        run: tools/ci/container-smoke.sh --image homebudget-backend-gateway:ci --mode invalid-config
+
+  sonar-mode:
+    name: Determine optional Sonar mode
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.mode.outputs.enabled }}
+    steps:
+      - id: mode
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: echo "enabled=$([[ -n \"${SONAR_TOKEN:-}\" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  sonar:
+    name: Optional Sonar analysis
+    if: ${{ needs.sonar-mode.outputs.enabled == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build-and-test, sonar-mode]
+    steps:
+      - name: Check out merge candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 10.0.300
+      - name: Run configured Sonar analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet tool update --global dotnet-sonarscanner --version 9.0.2
+          chmod +x ./startsonar.sh
+          ./startsonar.sh
+          dotnet build HomeBudgetBackendGateway.sln --configuration Release
+          dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+
+  common-quality-gate:
+    name: Confirm common Gateway quality checks
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [validate-configuration, build-and-test, security, workflow-policy, docker-verify]
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Evaluate every required common-quality result
+        env:
+          GATE_RESULTS: ${{ toJson(needs) }}
+          GATE_REQUIRED_JOBS: validate-configuration,build-and-test,security,workflow-policy,docker-verify
+        run: node tools/ci/pr-gate.mjs

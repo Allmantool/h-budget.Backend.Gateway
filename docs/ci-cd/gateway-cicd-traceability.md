@@ -10,7 +10,7 @@
 | Actual container behavior | `docker-verify` | transient TLS, health, Ocelot forwarding, invalid TLS configuration |
 | Fail-closed merge decision | `Gateway PR Gate` | explicit expected results in `pr-gate.mjs` |
 | Protected-master validation | `update_semver / verify` | reusable verification on resulting SHA |
-| Publication decision and version | `update_semver / publication-decision, publish` | explicit HELD/READY summary; semantic-release lifecycle observation, stable tag/SHA guards, draft Release |
+| Automatic publication decision and version | `update_semver / publish` | semantic-release lifecycle observation, stable tag/SHA guards, draft Release |
 | Exact release artifact | `release-tag / build-image` | archive smoke-tested before publication |
 | Publication/recovery | `release-tag / push-image` | version/SHA identity and remote digest convergence under `production` |
 | Final delivery result | `update_semver / deliver, delivery-result` and `release-tag / delivery-result` | direct reusable handoff; release, registry, and Environment readback report |
