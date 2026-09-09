@@ -27,6 +27,12 @@ export function validateReleaseIdentity(release, releaseId, tag, sourceSha) {
   return { releaseId: numericReleaseId, tag: release.tag_name, draft: release.draft };
 }
 
+export function validateFinalReleaseIdentity(release, releaseId, tag) {
+  const identity = validateReleaseIdentity(release, releaseId, tag);
+  if (identity.draft) throw new Error(`GitHub Release ID ${identity.releaseId} is still a draft.`);
+  return identity;
+}
+
 if (import.meta.main) {
   const [first, second, third, fourth, fifth] = process.argv.slice(2);
   if (first === '--verify') {
@@ -35,6 +41,14 @@ if (import.meta.main) {
     }
     const release = JSON.parse(await readFile(second, 'utf8'));
     process.stdout.write(`${JSON.stringify(validateReleaseIdentity(release, third, fourth, fifth))}\n`);
+    process.exit();
+  }
+  if (first === '--verify-final') {
+    if (!second || !third || !fourth) {
+      throw new Error('Usage: node tools/ci/release-resolver.mjs --verify-final <release.json> <release-id> <tag>');
+    }
+    const release = JSON.parse(await readFile(second, 'utf8'));
+    process.stdout.write(`${JSON.stringify(validateFinalReleaseIdentity(release, third, fourth))}\n`);
     process.exit();
   }
 

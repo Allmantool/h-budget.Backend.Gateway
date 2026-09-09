@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:release-policy": "node --test tools/ci/*.spec.mjs"
+    "test:release-policy": "node --test tools/ci/*.spec.mjs",
+    "preflight:workflow": "pwsh -NoProfile -File tools/ci/invoke-local-preflight.ps1"
   },
   "devDependencies": {
     "@semantic-release/commit-analyzer": "13.0.1",

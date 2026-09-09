@@ -73,12 +73,25 @@ export function parseConventionalTitle(title) {
   return { type: match.groups.type, breaking: Boolean(match.groups.breaking), supported: CONVENTIONAL_TYPES.includes(match.groups.type) };
 }
 
+function quoted(value) {
+  return JSON.stringify(value);
+}
+
+function titleError(title) {
+  if (!title?.trim()) return '[GW-PR-002] Empty PR title. Expected: an allowed type, optional scope and breaking marker, then ": description". Suggested correction: ci(gateway): improve CI/CD verification. Fix: edit the PR title. Recheck: the PR edited event reruns title validation.';
+  const typeMatch = /^(?<type>[a-z]+)(?:\([^\)\r\n]*\))?(?:!)?:/.exec(title);
+  if (typeMatch && !CONVENTIONAL_TYPES.includes(typeMatch.groups.type)) return `[GW-PR-001] Unsupported PR-title type: ${typeMatch.groups.type}. Expected: ${CONVENTIONAL_TYPES.join(', ')}, optional scope and breaking marker, then ': description'. Suggested correction: ci(gateway): improve CI/CD verification. Fix: edit the PR title; renaming the branch is not required by this error. Recheck: the PR edited event reruns title validation.`;
+  if (/^[a-z]+\(\):/.test(title)) return `[GW-PR-003] Empty PR-title scope in ${quoted(title)}. Expected: a non-empty scope or no scope. Fix: edit the PR title. Recheck: the PR edited event reruns title validation.`;
+  if (/^[a-z]+(?:\([^\)\r\n]+\))?!?:\s*$/.test(title)) return `[GW-PR-004] Empty PR-title description in ${quoted(title)}. Expected: text after ': '. Fix: edit the PR title. Recheck: the PR edited event reruns title validation.`;
+  return `[GW-PR-005] PR-title parser rejected ${quoted(title)}. Expected: <allowed type>(<optional non-empty scope>)<optional !>: <description>. Fix: edit the PR title. Recheck: the PR edited event reruns title validation.`;
+}
+
 export function validatePullRequest(branch, title) {
   const branchRule = branchRules.find(rule => rule.pattern.test(branch));
-  if (!branchRule) return `Unsupported branch name "${branch}". Use an approved prefix followed by a non-empty description.`;
+  if (!branchRule) return `[GW-PR-006] Unsupported branch name ${quoted(branch)}. Expected: an approved prefix followed by a non-empty description. Fix: rename the branch only if its prefix is unsupported; edit the title separately. Recheck: push a new branch commit.`;
   const parsedTitle = parseConventionalTitle(title);
-  if (!parsedTitle || !parsedTitle.supported) return `Invalid PR title "${title}". Use a supported <type>(<scope>): <description>.`;
-  if (!branchRule.allowedTypes.includes(parsedTitle.type)) return `Branch "${branch}" does not allow ${parsedTitle.type}: titles.`;
+  if (!parsedTitle || !parsedTitle.supported) return titleError(title);
+  if (!branchRule.allowedTypes.includes(parsedTitle.type)) return `[GW-PR-007] Branch ${quoted(branch)} does not allow ${parsedTitle.type}: titles. Expected for this branch: ${branchRule.allowedTypes.join(', ')}. Fix: edit the PR title; renaming the branch is not required by this error. Recheck: the PR edited event reruns title validation.`;
   return undefined;
 }
 

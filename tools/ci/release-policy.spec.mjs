@@ -25,7 +25,12 @@ test('classifies production conventional commits and preserves no-release ranges
   }
   assert.equal(await analyze('docs: update runbook'), null);
   assert.equal(validatePullRequest('feature/new-route', 'feat(gateway): add route'), undefined);
-  assert.match(validatePullRequest('unsupported/new-route', 'feat(gateway): add route'), /Unsupported branch name/);
+  assert.match(validatePullRequest('unsupported/new-route', 'feat(gateway): add route'), /GW-PR-006/);
+  assert.equal(validatePullRequest('tech/improve-ci-cd', 'ci(gateway): improve CI\/CD verification'), undefined);
+  assert.match(validatePullRequest('tech/improve-ci-cd', 'tech: improve ci / cd'), /\[GW-PR-001\].*tech.*ci\(gateway\)/);
+  assert.match(validatePullRequest('tech/improve-ci-cd', 'ci(gateway): '), /GW-PR-004/);
+  assert.match(validatePullRequest('tech/improve-ci-cd', 'ci(): improve'), /GW-PR-003/);
+  assert.match(validatePullRequest('tech/improve-ci-cd', 'ci gateway improve'), /GW-PR-005/);
 });
 
 test('keeps only the three production entry points and fail-closed quality requirements', async () => {
