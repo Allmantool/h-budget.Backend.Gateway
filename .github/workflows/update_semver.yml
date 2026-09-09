@@ -4,6 +4,7 @@ run-name: Gateway release ${{ github.sha }}
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,40 +16,17 @@ concurrency:
 jobs:
   verify:
     name: Verify release candidate
-    uses: ./.github/workflows/ci-master.yml
+    if: ${{ github.event_name == 'push' || github.ref == 'refs/heads/master' }}
+    uses: ./.github/workflows/ci-common.yml
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  publication-decision:
-    name: Decide publication eligibility
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      publication_enabled: ${{ steps.decision.outputs.publication_enabled }}
-    steps:
-      - id: decision
-        name: Evaluate repository publication control
-        env:
-          PUBLICATION_ENABLED: ${{ vars.GATEWAY_PUBLICATION_ENABLED }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$PUBLICATION_ENABLED" == 'true' ]]; then
-            echo 'publication_enabled=true' >> "$GITHUB_OUTPUT"
-            echo '## Gateway delivery: READY' >> "$GITHUB_STEP_SUMMARY"
-            echo 'Publication is explicitly enabled by the repository-level GATEWAY_PUBLICATION_ENABLED variable.' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo 'publication_enabled=false' >> "$GITHUB_OUTPUT"
-            echo '## Gateway delivery: HELD' >> "$GITHUB_STEP_SUMMARY"
-            echo 'Publication is disabled. No tag, GitHub Release, registry image, or environment operation will be attempted.' >> "$GITHUB_STEP_SUMMARY"
-          fi
-
   publish:
     name: Publish GitHub Release
-    if: ${{ needs.verify.result == 'success' && needs.publication-decision.outputs.publication_enabled == 'true' }}
+    if: ${{ needs.verify.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [verify, publication-decision]
+    needs: verify
     permissions:
       contents: write
     outputs:
@@ -166,7 +144,7 @@ jobs:
   delivery-result:
     name: Report Gateway delivery result
     if: ${{ always() }}
-    needs: [verify, publication-decision, publish, deliver]
+    needs: [verify, publish, deliver]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -177,7 +155,6 @@ jobs:
           persist-credentials: false
       - name: Evaluate final delivery result
         env:
-          PUBLICATION_ENABLED: ${{ needs.publication-decision.outputs.publication_enabled }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
           RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
@@ -185,10 +162,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence="$(jq -cn --arg verifyResult "$VERIFY_RESULT" --arg publicationEnabled "$PUBLICATION_ENABLED" --arg publishResult "$PUBLISH_RESULT" --arg gitTag "$RELEASE_TAG" --arg deliveryResult "$DELIVERY_RESULT" '{verifyResult: $verifyResult, publicationEnabled: $publicationEnabled, publishResult: $publishResult, gitTag: $gitTag, deliveryResult: $deliveryResult}')"
+          evidence="$(jq -cn --arg verifyResult "$VERIFY_RESULT" --arg publishResult "$PUBLISH_RESULT" --arg gitTag "$RELEASE_TAG" --arg deliveryResult "$DELIVERY_RESULT" '{verifyResult: $verifyResult, publishResult: $publishResult, gitTag: $gitTag, deliveryResult: $deliveryResult}')"
           result="$(DELIVERY_EVIDENCE="$evidence" node tools/ci/delivery-result.mjs)"
           printf '## Gateway final delivery: %s\n\n%s\n' "$(jq -r '.finalOutcome' <<< "$result")" "$(jq -r '.reason' <<< "$result")" >> "$GITHUB_STEP_SUMMARY"
           case "$(jq -r '.finalOutcome' <<< "$result")" in
-            HELD|NO_RELEASE|PUBLISHED) ;;
+            NO_RELEASE|PUBLISHED) ;;
             *) exit 1 ;;
           esac

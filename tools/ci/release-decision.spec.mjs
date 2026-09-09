@@ -28,11 +28,10 @@ test('reports no-release and draft recovery without allocating another version',
   assert.equal(recovery.version, '0.1.0');
 });
 
-test('final delivery status cannot pass for held, missing, or failed publication evidence', () => {
-  assert.equal(evaluateDelivery({ verifyResult: 'failure', publicationEnabled: 'false' }).finalOutcome, 'FAILED');
-  assert.equal(evaluateDelivery({ verifyResult: 'success', publicationEnabled: 'false' }).finalOutcome, 'HELD');
-  assert.equal(evaluateDelivery({ verifyResult: 'success', publicationEnabled: 'true', publishResult: 'success' }).finalOutcome, 'NO_RELEASE');
-  assert.equal(evaluateDelivery({ verifyResult: 'success', publicationEnabled: 'true', publishResult: 'failure', gitTag: 'v0.1.0' }).finalOutcome, 'FAILED');
-  assert.equal(evaluateDelivery({ verifyResult: 'success', publicationEnabled: 'true', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'failure' }).finalOutcome, 'INCOMPLETE');
-  assert.equal(evaluateDelivery({ verifyResult: 'success', publicationEnabled: 'true', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'success' }).finalOutcome, 'PUBLISHED');
+test('final delivery status cannot pass for missing or failed publication evidence', () => {
+  assert.equal(evaluateDelivery({ verifyResult: 'failure' }).finalOutcome, 'FAILED');
+  assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'success' }).finalOutcome, 'NO_RELEASE');
+  assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'failure', gitTag: 'v0.1.0' }).finalOutcome, 'FAILED');
+  assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'failure' }).finalOutcome, 'FAILED');
+  assert.equal(evaluateDelivery({ verifyResult: 'success', publishResult: 'success', gitTag: 'v0.1.0', deliveryResult: 'success' }).finalOutcome, 'PUBLISHED');
 });

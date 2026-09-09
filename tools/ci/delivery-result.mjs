@@ -2,9 +2,6 @@ export function evaluateDelivery(evidence) {
   if (evidence.verifyResult !== 'success') {
     return { finalOutcome: 'FAILED', reason: `Release qualification result: ${evidence.verifyResult ?? 'missing'}.` };
   }
-  if (evidence.publicationEnabled !== 'true') {
-    return { finalOutcome: 'HELD', reason: 'Publication is disabled by GATEWAY_PUBLICATION_ENABLED.' };
-  }
   if (evidence.publishResult !== 'success') {
     return { finalOutcome: 'FAILED', reason: `Release publication job result: ${evidence.publishResult ?? 'missing'}.` };
   }
@@ -12,7 +9,7 @@ export function evaluateDelivery(evidence) {
     return { finalOutcome: 'NO_RELEASE', reason: 'semantic-release produced no release identity.' };
   }
   if (evidence.deliveryResult !== 'success') {
-    return { finalOutcome: 'INCOMPLETE', reason: `Versioned delivery result: ${evidence.deliveryResult ?? 'missing'}.` };
+    return { finalOutcome: 'FAILED', reason: `Versioned delivery result: ${evidence.deliveryResult ?? 'missing'}.` };
   }
   return { finalOutcome: 'PUBLISHED', reason: 'Immutable release, registry artifact, and environment publication record were verified.' };
 }

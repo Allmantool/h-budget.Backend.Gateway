@@ -53,22 +53,27 @@ test('defines stable tag, bootstrap, and release workflow invariants', async () 
   assert.equal(isStableTag('v1.2.3-rc.1'), false);
   assert.deepEqual(releaseConfig.branches, ['master']);
   assert.equal(releaseConfig.tagFormat, 'v${version}');
-  const [policy, release, deployment] = await Promise.all([
+  const [policy, commonQuality, release, deployment] = await Promise.all([
     readFile(new URL('../../.github/workflows/ci-master.yml', import.meta.url), 'utf8'),
+    readFile(new URL('../../.github/workflows/ci-common.yml', import.meta.url), 'utf8'),
     readFile(new URL('../../.github/workflows/update_semver.yml', import.meta.url), 'utf8'),
     readFile(new URL('../../.github/workflows/release-tag.yml', import.meta.url), 'utf8'),
   ]);
   assert.match(policy, /Gateway PR Gate/);
+  assert.match(policy, /needs: \[common-quality, release-policy\]/);
   assert.match(policy, /contents: read/);
   assert.doesNotMatch(policy, /contents: write|git tag|gh release/);
+  assert.match(commonQuality, /workflow_call/);
+  assert.match(commonQuality, /GATE_REQUIRED_JOBS: validate-configuration,build-and-test,security,workflow-policy,docker-verify/);
   assert.match(release, /group: gateway-release-master/);
-  assert.match(release, /vars\.GATEWAY_PUBLICATION_ENABLED/);
-  assert.match(release, /Gateway delivery: HELD/);
+  assert.doesNotMatch(release, /GATEWAY_PUBLICATION_ENABLED|HELD/);
+  assert.match(release, /uses: \.\/\.github\/workflows\/ci-common\.yml/);
   assert.match(release, /uses: \.\/\.github\/workflows\/release-tag\.yml/);
   assert.doesNotMatch(release, /gh workflow run/);
   assert.match(release, /npx --no-install semantic-release/);
   assert.doesNotMatch(release, /git push --force|git tag -f/);
   assert.match(deployment, /workflow_call/);
+  assert.doesNotMatch(deployment, /GATEWAY_PUBLICATION_ENABLED|HELD|publication-preflight/);
   assert.match(deployment, /GATEWAY_IMAGE_REPOSITORY: allmantool\/homebudget-backend-gateway/);
   assert.match(deployment, /environment:\s+name: production/);
   assert.match(deployment, /delivery-report\.json/);

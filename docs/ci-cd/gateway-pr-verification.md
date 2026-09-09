@@ -2,20 +2,16 @@
 
 Every PR to `master` provides purpose, acceptance criteria, implementation summary, updated tests or verification evidence, compatibility/operational impact, and expected release impact. For non-trivial executable changes, retain `requirement -> acceptance criterion -> implementation -> test/evidence`. Template checkboxes support review but never waive automation.
 
-`Gateway Verification` runs for opened, synchronized, reopened, ready-for-review, title-edited, and label-edited PR events. It checks out `github.sha`, GitHub's tested merge candidate; the PR policy summary records both PR head SHA and tested candidate SHA. It has no path exclusions. PR code runs under `pull_request` with `contents: read`, never `pull_request_target`.
+`Gateway PR Verification` runs for opened, synchronized, reopened, ready-for-review, title-edited, and label-edited PR events. It calls `Gateway Common Quality` and checks out `github.sha`, GitHub's tested merge candidate; the PR policy summary records both PR head SHA and tested candidate SHA. It has no path exclusions. PR code runs under `pull_request` with `contents: read`, never `pull_request_target`.
 
 The final required check is the GitHub Actions check named **Gateway PR Gate** (publisher: GitHub Actions; capture its observed integration ID at activation). It succeeds only when these jobs explicitly return `success`:
 
 | Job ID | Evidence |
 | --- | --- |
 | `release-policy` | title/branch validation and policy fixtures |
-| `validate-configuration` | JSON parsing and committed-configuration safety |
-| `build-and-test` | restore, Release build, discovered test count, coverage |
-| `security` | parsed transitive NuGet audit and npm release-toolchain audit |
-| `workflow-policy` | pinned actionlint and executable policy tests |
-| `docker-verify` | actual image, TLS, health, forwarding, invalid-config negative case |
+| `common-quality` | reusable configuration, Release build/test/coverage, dependency security, actionlint/policy fixtures, and production container smoke tests |
 
-The aggregate uses `always()` and an explicit expected job list. Failure, cancellation, unexpected skip, missing evidence, zero tests, or scanner/audit failure fails it. Optional Sonar does not participate. `tools/ci/pr-gate.spec.mjs` covers success, failure, skip, cancellation, missing, zero-test, and unavailable-security-service decisions.
+The PR aggregate uses `always()` and explicitly requires both dependencies. The common-quality aggregate separately uses `always()` and explicitly requires configuration, build/test, security, workflow-policy, and Docker verification. Failure, cancellation, unexpected skip, missing evidence, zero tests, or scanner/audit failure fails the required gate. Optional Sonar does not participate. `tools/ci/pr-gate.spec.mjs` covers success, failure, skip, cancellation, missing, zero-test, and unavailable-security-service decisions.
 
 ## Required GitHub enforcement
 
