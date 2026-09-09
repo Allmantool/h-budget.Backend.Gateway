@@ -1,59 +1,48 @@
-# Gateway CI/CD Activation Ledger
+# Gateway CI/CD Activation and Delivery Ledger
 
-This ledger separates current evidence from changes that only a repository or release owner may authorize. It must be updated with links and timestamps when each owner action is completed.
+This ledger records evidence separately from owner-authorized mutations. Do not infer publication, registry, or runtime delivery from a green qualification run.
 
-| Requirement | Current evidence | Action | Authorized executor | State |
-| --- | --- | --- | --- | --- |
-| Hosted candidate verification | PR #385, `tech/improve-ci-cd-v7`, SHA `107f2daa3944cda8a94bdbe9daf572a4a8ccd02e`, `Gateway PR Gate` succeeded in run `34313828062`. | Retain this as the activation PR evidence; re-run after every new commit. | CI maintainer | VERIFIED for the listed candidate |
-| Required PR merge policy | `master` has no classic branch protection and no effective rulesets. | Apply the checked ruleset only after the named successful check is inspected. | Repository owner | NOT ACTIVATED |
-| Required status check identity | The observed successful `Gateway PR Gate` was emitted on the activation PR, not on `master`. | Inspect using the PR head ref and use its publisher integration ID in the ruleset payload. | Repository owner | READY FOR OWNER ACTION |
-| Publication hold | `GATEWAY_PUBLICATION_ENABLED` has no repository value. The local activation workflow publishes only when it equals `true`; the live `master` workflow is not yet guarded. | Leave the variable unset while the activation change is reviewed and merged; set it to `true` only after the owner has approved release recovery. | Release owner | HOLD DESIGNED; NOT ACTIVATED |
-| Release recovery | The latest `Gateway Deployment` run `34282384196` failed in `Build Docker Image`; no successful sandbox recovery evidence exists. The current workflow has no isolated registry or environment input, so dispatching it would target the configured production publication path. | Provision an isolated private sandbox path before any recovery dispatch, then attach the run URL, tag SHA, digest, and smoke results. | Release owner | NOT VERIFIED |
-| Credential posture | Repository secret names include Docker Hub, GitHub PAT, NuKeeper, and Sonar credentials. Values were neither read nor exposed. | Rotate/revoke according to the owner checklist and record only completion timestamps. | Credential owner | NOT VERIFIED |
-| Code scanning | Open medium CodeQL alert #3: `cs/web/unvalidated-url-redirection` at `HttpsEnforcementMiddleware.cs:50` on `master`. | Triage and fix or accept with an approved risk record; do not treat a successful CodeQL workflow as closure. | Security owner | OPEN |
+## Release #540 diagnosis
 
-## Owner activation sequence
+| Boundary | Evidence | State |
+| --- | --- | --- |
+| Source qualification | Gateway Release run #540 is API run `34314742288`, event `push`, source/workflow SHA `d204e5bb1ae0e88df548d1acf2f8d96701e72ed0`. Reusable verification, CodeQL, container build, positive smoke, and invalid-configuration smoke passed. | VERIFIED |
+| Publication eligibility | Repository variable `GATEWAY_PUBLICATION_ENABLED` is absent. The `Publish GitHub Release` job was consequently skipped. | HELD |
+| Version analysis | From immutable tag `v0.0.796`, the reachable merge range contains `feat: improve ci / cd` and maintenance commits. The locked production commit-analyzer resolved `minor`; the next candidate is `v0.1.0`. | CANDIDATE; NOT EXECUTED |
+| Tag and GitHub Release | No `v0.1.0` tag or GitHub Release exists. | ABSENT |
+| Publication handoff | The skipped publish job created no tag and therefore dispatched no child work. The former asynchronous dispatch has been replaced locally by a direct reusable workflow call. | ABSENT; REPAIRED LOCALLY |
+| Docker Hub | `allmantool/homebudget-backend-gateway:0.1.0` and `sha-d204e5bb1ae0e88df548d1acf2f8d96701e72ed0` return `no such manifest`. | ABSENT |
+| GitHub Environment | `production` exists with no protection rules. Run #540 created no deployment record because publication never ran. The repaired workflow binds the actual Docker Hub publish job to it. | NOT VERIFIED FOR #540; REPAIRED LOCALLY |
+| Runtime target | No Gateway runtime deployment mechanism, target URL, or digest-consuming rollout script is configured in this repository. | NOT CONFIGURED |
 
-All commands below are procedures for an authorized owner; they were **not run** by this change.
+The first evidenced cause is intentional fail-closed publication control, not a semantic-release failure. The post-merge repair adds a visible HELD/READY decision, supported semantic-release decision evidence, direct delivery correlation, registry readback, and an environment delivery report.
 
-1. While `master` still has the unguarded live release workflow, an explicitly authorized release owner must place a temporary publication hold before any release-affecting merge. Confirm no release mutation is in progress, disable the current workflow by its stable file name, and read back its state:
+## Owner-authorized procedure
 
-   ```powershell
-   gh run list --repo Allmantool/h-budget.Backend.Gateway --status in_progress
-   gh workflow disable update_semver.yml --repo Allmantool/h-budget.Backend.Gateway
-   gh workflow list --repo Allmantool/h-budget.Backend.Gateway
-   gh variable list --repo Allmantool/h-budget.Backend.Gateway
-   ```
+The following commands are procedures only; they were **not run** by this change.
 
-2. Commit and push the local activation changes to PR #385, excluding unrelated working-tree changes. Wait for a new successful `Gateway PR Gate` run on that exact candidate SHA.
-
-3. Merge the activation PR while the temporary hold is active. The merged workflow has a default-off publication condition, so re-enabling it later cannot publish unless its variable is explicitly set to `true`.
-
-4. Inspect the effective policy and the actual PR check publisher, then apply once after explicit repository-owner authorization:
+1. Commit only the follow-up delivery repair and open a new protected PR from the current post-merge branch. Do not include the unrelated `HomeBudget.Backend.Gateway/appsettings.json` working-tree change.
+2. Require a fresh successful `Gateway PR Gate`, then merge through the master PR ruleset after the repository owner has applied it. The release range for the new source SHA includes the original `feat` and remains eligible for `v0.1.0` unless a competing immutable release is created first.
+3. Inspect the sole control and all workflow states before authorizing publication:
 
    ```powershell
-   .\tools\ci\configure-merge-protection.ps1 -Mode Inspect -Repository Allmantool/h-budget.Backend.Gateway -CheckReference tech/improve-ci-cd-v7
-   .\tools\ci\configure-merge-protection.ps1 -Mode Apply -Repository Allmantool/h-budget.Backend.Gateway -CheckReference tech/improve-ci-cd-v7
+   pwsh .\tools\ci\configure-publication.ps1 -Mode Inspect -Repository Allmantool/h-budget.Backend.Gateway
    ```
 
-5. Read back `repos/Allmantool/h-budget.Backend.Gateway/rules/branches/master`, open a new harmless PR, and prove a direct push is rejected while merging requires a fresh successful `Gateway PR Gate` check.
-
-6. Before any recovery dispatch, provision an isolated private registry namespace and protected sandbox environment, and wire a sandbox-only workflow input or branch to those credentials. Validate that it cannot write the production image namespace or publish a GitHub Release. With a release owner and those sandbox credentials present, exercise recovery only for an existing immutable tag. Record the workflow URL, source SHA, image digest, both smoke-test outcomes, and traceability. Do not publish a new version as a test.
-
-7. Re-enable the guarded release workflow after the ruleset and recovery prerequisites are satisfied; leave the publication variable unset. A subsequent protected merge must verify but skip the publish job:
+4. Confirm the owner-approved registry namespace, Docker Hub credentials, CodeQL disposition, and credential-rotation disposition. The switch alone is not security approval.
+5. Enable delivery explicitly, then merge or dispatch a newly validated source. Enabling does not replay Release #540:
 
    ```powershell
-   gh workflow enable update_semver.yml --repo Allmantool/h-budget.Backend.Gateway
+   pwsh .\tools\ci\configure-publication.ps1 -Mode Enable -Repository Allmantool/h-budget.Backend.Gateway
    ```
 
-8. After the recovery evidence, credential rotation, and CodeQL disposition are approved, enable publication deliberately:
+6. Verify the generated immutable tag, draft/final GitHub Release, both remote Docker Hub tags and common digest, `production` deployment record, and `gateway-delivery-<tag>` report. If a draft exists for the exact source SHA, use the supported recovery path; do not allocate another version.
+7. Disable immediately if necessary; it fail-closes subsequent runs but does not cancel an execution already in progress:
 
    ```powershell
-   gh variable set GATEWAY_PUBLICATION_ENABLED --repo Allmantool/h-budget.Backend.Gateway --body true
+   pwsh .\tools\ci\configure-publication.ps1 -Mode Disable -Repository Allmantool/h-budget.Backend.Gateway
    ```
 
-9. Trigger a normal protected PR merge; verify that the resulting release has a draft-to-published traceability record before any production rollout.
+## Truthful outcome labels
 
-## Publication-hold recovery
-
-If publication must be stopped again, remove or set `GATEWAY_PUBLICATION_ENABLED` to any value other than `true`, verify no release run is in progress, and do not merge release-affecting changes until the owner has reviewed the hold. This control is deliberately fail-closed: a missing variable never enables publication.
+`HELD` means no publication mutation was attempted. `NO_RELEASE` means semantic-release found no eligible commit. `PUBLISHED` requires a finalized GitHub Release, matching remote version/SHA image digest, and the `production` registry-publication deployment record. `RUNTIME DEPLOYMENT: NOT CONFIGURED` remains distinct until an owner supplies an actual target and digest-based rollout/health verification.

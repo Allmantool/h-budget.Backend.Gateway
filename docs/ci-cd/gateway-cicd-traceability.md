@@ -10,9 +10,9 @@
 | Actual container behavior | `docker-verify` | transient TLS, health, Ocelot forwarding, invalid TLS configuration |
 | Fail-closed merge decision | `Gateway PR Gate` | explicit expected results in `pr-gate.mjs` |
 | Protected-master validation | `update_semver / verify` | reusable verification on resulting SHA |
-| Version and notes | `update_semver / publish` | semantic-release, stable tag/SHA guards, draft Release |
+| Publication decision and version | `update_semver / publication-decision, publish` | explicit HELD/READY summary; semantic-release lifecycle observation, stable tag/SHA guards, draft Release |
 | Exact release artifact | `release-tag / build-image` | archive smoke-tested before publication |
-| Publication/recovery | `release-tag / push-image` | version/SHA identity and digest convergence |
-| Release handoff | `release-tag / record-deployment` | trace block, digest, workflow artifact, draft finalization |
+| Publication/recovery | `release-tag / push-image` | version/SHA identity and remote digest convergence under `production` |
+| Final delivery result | `update_semver / deliver, delivery-result` and `release-tag / delivery-result` | direct reusable handoff; release, registry, and Environment readback report |
 
 Canonical local verification is the pinned .NET 10 SDK container in `dockerfile`; `global.json` selects SDK `10.0.300` with feature-band roll-forward. Use `npm ci --ignore-scripts && npm run test:release-policy`, the container .NET build/test commands, `tools/ci/container-smoke.sh`, and `pwsh tools/ci/configure-merge-protection.ps1 -Mode Inspect` for evidence.
