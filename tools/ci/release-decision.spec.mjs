@@ -4,7 +4,7 @@ import test from 'node:test';
 import { evaluateDelivery } from './delivery-result.mjs';
 import { resolveReleaseDecision } from './release-decision.mjs';
 import { githubReleaseId } from './release-observer.mjs';
-import { resolveExactRelease, validateReleaseIdentity } from './release-resolver.mjs';
+import { resolveExactRelease, validateFinalReleaseIdentity, validateReleaseIdentity } from './release-resolver.mjs';
 
 test('uses semantic-release observer data without independently calculating a version', () => {
   const decision = resolveReleaseDecision({
@@ -64,6 +64,11 @@ test('requires release metadata to bind a recovery tag to its qualified source',
   const release = { id: 385437440, tag_name: 'v0.1.0', draft: true, body: '<!-- gateway-release-source:start -->\n- Commit: `source-sha`\n<!-- gateway-release-source:end -->' };
   assert.equal(validateReleaseIdentity(release, 385437440, 'v0.1.0', 'source-sha').releaseId, 385437440);
   assert.throws(() => validateReleaseIdentity(release, 385437440, 'v0.1.0', 'other-sha'), /source provenance/);
+});
+
+test('accepts only an exact non-draft release during final readback', () => {
+  assert.equal(validateFinalReleaseIdentity({ id: 1, tag_name: 'v0.1.0', draft: false }, 1, 'v0.1.0').draft, false);
+  assert.throws(() => validateFinalReleaseIdentity({ id: 1, tag_name: 'v0.1.0', draft: true }, 1, 'v0.1.0'), /still a draft/);
 });
 
 test('final delivery status cannot pass for missing or failed publication evidence', () => {

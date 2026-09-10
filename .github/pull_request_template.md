@@ -17,6 +17,8 @@
 - Commands/results run locally:
 - CI evidence after the PR's current merge candidate completes:
 
+Use `npm run preflight:workflow` for local workflow/helper validation. It preserves failing actionlint and test exit codes; Sonar quality-gate evaluation remains hosted-only.
+
 ## Author checklist
 
 - [ ] The PR title follows the release policy and the branch intent matches it.

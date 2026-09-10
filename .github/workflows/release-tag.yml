@@ -207,10 +207,20 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$VERIFY_RESULT" == success && "$BUILD_RESULT" == success && "$PUBLISH_RESULT" == success && "$FINALIZE_RESULT" == success ]]
-          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"; jq -e --arg tag "$RELEASE_TAG" '.tag_name == $tag and .draft == false' <<< "$release" > /dev/null
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"; printf "%s" "$release" > release.json
+          node tools/ci/release-resolver.mjs --verify-final release.json "$RELEASE_ID" "$RELEASE_TAG" > /dev/null
           docker pull "$IMAGE_REPOSITORY:$RELEASE_VERSION" >/dev/null; docker pull "$IMAGE_REPOSITORY:sha-$RELEASE_SHA" >/dev/null
-          digest="$(docker image inspect "$IMAGE_REPOSITORY:$RELEASE_VERSION" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"; sha_digest="$(docker image inspect "$IMAGE_REPOSITORY:sha-$RELEASE_SHA" --format '{{index .RepoDigests 0}}' | cut -d'@' -f2)"
+          digest="$(docker image inspect "$IMAGE_REPOSITORY:$RELEASE_VERSION" --format "{{index .RepoDigests 0}}" | cut -d@ -f2)"; sha_digest="$(docker image inspect "$IMAGE_REPOSITORY:sha-$RELEASE_SHA" --format "{{index .RepoDigests 0}}" | cut -d@ -f2)"
           test "$digest" = "$IMAGE_DIGEST" && test "$digest" = "$sha_digest"
-          deployment_id="$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=production&sha=$RELEASE_SHA&per_page=100" --jq '[.[] | select(.environment == "production") | .id] | .[0] // empty')"; test -n "$deployment_id"
-          test "$(gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses?per_page=1" --jq '.[0].state // empty')" = success
-          printf '## Gateway %s published to Docker Hub\n\n- Release: %s\n- Source: %s/%s/commit/%s\n- Image: `%s@%s`\n' "$RELEASE_TAG" "$(jq -r '.html_url' <<< "$release")" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$RELEASE_SHA" "$IMAGE_REPOSITORY" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          gh api "repos/$GITHUB_REPOSITORY/deployments?environment=production&sha=$RELEASE_SHA&per_page=100" > deployments.json
+          deployment_id="$(node tools/ci/deployment-evidence.mjs deployment-id deployments.json production)"
+          gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses?per_page=1" > deployment-statuses.json
+          node tools/ci/deployment-evidence.mjs require-success deployment-statuses.json
+          release_url="$(jq -r .html_url <<< "$release")"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Gateway $RELEASE_TAG published to Docker Hub
+
+          - Release: $release_url
+          - Source: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$RELEASE_SHA
+          - Image: \`$IMAGE_REPOSITORY@$digest\`
+          EOF
