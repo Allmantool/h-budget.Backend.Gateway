@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<results>
+  <modules>
+    <module id="fixture" name="Gateway.dll" path="Gateway.dll" block_coverage="0" line_coverage="50" blocks_covered="1" blocks_not_covered="1" lines_covered="1" lines_not_covered="1">
+      <functions />
+      <source_files><source_file id="0" path="HomeBudget.Backend.Gateway/Program.cs" /></source_files>
+    </module>
+  </modules>
+</results>

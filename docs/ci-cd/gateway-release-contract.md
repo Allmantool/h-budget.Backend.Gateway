@@ -2,7 +2,7 @@
 
 > Current architecture (superseding the historical flow below): `Gateway PR Verification` -> required `Gateway PR Gate`; `Gateway Build & Release — master` -> semantic-release tag plus draft source metadata; `Gateway Deploy vX.Y.Z` -> tag-push deployment. Sonar scan/upload and exact non-coverage policy evaluation are mandatory; native coverage-only gate rejections are advisory and remain visible in Sonar. Build/release never invokes the deployment workflow. Deployment verifies the qualified master source/check and release provenance, retries metadata availability for 60 seconds, publishes only immutable version/SHA Docker tags under `production`, then finalizes the release. `GH_PAT` authenticates tag creation because `GITHUB_TOKEN` tag events do not trigger the separate deployment workflow. Manual dispatch is recovery of an existing tag only; there are no PR comments or other publication notification jobs.
 
-> Coverage is advisory in both PR and master common quality. Required test execution, Sonar's exact-analysis non-coverage conditions, security, configuration, workflow policy, and Docker verification remain release prerequisites.
+> Coverage collection, validation, and scanner import are required in both PR and master common quality. Only measured Sonar coverage gate conditions remain advisory; required test execution, Sonar's exact-analysis non-coverage conditions, security, configuration, workflow policy, and Docker verification remain release prerequisites.
 
 `master` is the sole stable release branch. A PR is fully verified before merge; a push to `master` repeats reusable verification before semantic-release decides whether a release is eligible. GitHub Releases are canonical release history and release tags match `vMAJOR.MINOR.PATCH`.
 
