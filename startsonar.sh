@@ -1,11 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-# Path to coverage file (relative to repository root). An explicitly empty value
-# means the workflow validated that coverage is unavailable and must not import it.
-if [[ ! -v COVERAGE_FILE ]]; then
-    COVERAGE_FILE="test-results/backend-gateway-coverage.xml"
+# The workflow validates and exports this report before scanner begin. Coverage
+# is required on every path that invokes this script.
+if [[ -z "${COVERAGE_FILE:-}" ]]; then
+    echo 'COV_REPORT_PATH_UNSET: required coverage report was not validated for scanner input.' >&2
+    exit 1
 fi
+
+if [[ ! -s "$COVERAGE_FILE" ]]; then
+    echo "COV_REPORT_UNAVAILABLE: required coverage report is missing or empty: $COVERAGE_FILE" >&2
+    exit 1
+fi
+
+echo "COV_REPORT_SCANNER_INPUT: path=$COVERAGE_FILE bytes=$(wc -c < "$COVERAGE_FILE")"
 
 sanitize_csv_property() {
     local raw_value="${1:-}"
@@ -56,14 +64,6 @@ scanner_args=(
 if [[ -n "${PULL_REQUEST_ID:-}" ]]; then
     echo "Running Sonar begin for Pull Request ${PULL_REQUEST_ID}"
 
-    if [[ -n "$COVERAGE_FILE" && -s "$COVERAGE_FILE" ]]; then
-        scanner_args+=("/d:sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}")
-
-        echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
-    else
-        echo "WARNING: Coverage is unavailable; continuing without advisory coverage import."
-    fi
-
     scanner_args+=(
         /d:sonar.pullrequest.key="${PULL_REQUEST_ID}"
         /d:sonar.pullrequest.branch="${PULL_REQUEST_SOURCE_BRANCH}"
@@ -82,14 +82,10 @@ else
         scanner_args+=("/d:sonar.branch.name=${BRANCH_NAME}")
     fi
 
-    if [[ -n "$COVERAGE_FILE" && -s "$COVERAGE_FILE" ]]; then
-        scanner_args+=("/d:sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}")
-
-        echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
-    else
-        echo "WARNING: Coverage is unavailable; continuing without advisory coverage import."
-    fi
 fi
+
+scanner_args+=("/d:sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}")
+echo "COV_REPORT_SCANNER_ARGUMENT: sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}"
 
 if [[ -n "${SONAR_EXCLUSIONS_SANITIZED}" ]]; then
     scanner_args+=("/d:sonar.exclusions=${SONAR_EXCLUSIONS_SANITIZED}")
