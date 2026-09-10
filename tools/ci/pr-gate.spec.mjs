@@ -37,6 +37,7 @@ for (const [name, mutate, expected] of [
   ['zero-test suite represented as failed test validation', results => { results['build-and-test'] = { result: 'failure' }; }, 'build-and-test: failure'],
   ['security scanner outage represented as failed security validation', results => { results.security = { result: 'failure' }; }, 'security: failure'],
   ['required Sonar job is missing', results => { delete results.sonar; }, 'sonar: missing'],
+  ['failed Sonar scanner or API evaluation', results => { results.sonar = { result: 'failure' }; }, 'sonar: failure'],
   ['required Sonar job is cancelled', results => { results.sonar = { result: 'cancelled' }; }, 'sonar: cancelled'],
 ]) {
   test(`common quality fails closed for ${name}`, () => {
