@@ -229,7 +229,58 @@ jobs:
       contents: read
       deployments: read
     steps:
+      - id: upstream
+        name: Require successful publication prerequisites
+        env:
+          VERIFY_RESULT: ${{ needs.verify-release.result }}
+          BUILD_RESULT: ${{ needs.build-image.result }}
+          PUBLISH_RESULT: ${{ needs.push-image.result }}
+          FINALIZE_RESULT: ${{ needs.finalize-release.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$VERIFY_RESULT" == success && "$BUILD_RESULT" == success && "$PUBLISH_RESULT" == success && "$FINALIZE_RESULT" == success ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          {
+            echo '## Gateway publication report pending'
+            echo '- Release qualification: '"$VERIFY_RESULT"
+            echo '- Image build: '"$BUILD_RESULT"
+            echo '- Image publication: '"$PUBLISH_RESULT"
+            echo '- Release finalization: '"$FINALIZE_RESULT"
+            echo '- Final release, registry, and Environment evidence was not read back.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo '[GW-REPORT-UPSTREAM] Required publication prerequisite did not succeed.' >&2
+          exit 1
+      - name: Check out reporting automation
+        if: ${{ steps.upstream.outputs.ready == 'true' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Use Node.js for reporting helpers
+        if: ${{ steps.upstream.outputs.ready == 'true' }}
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.10.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Verify reporting workspace
+        if: ${{ steps.upstream.outputs.ready == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/ci/report-workspace.mjs
+          reporting_sha="$(git rev-parse HEAD)"
+          [[ "$reporting_sha" =~ ^[0-9a-f]{40}$ ]]
+          {
+            echo "Reporting workspace: $PWD"
+            echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
+            echo "Reporting automation SHA: $reporting_sha"
+            echo "Released application SHA: ${{ needs.verify-release.outputs.release_sha }}"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Read back release, registry, and environment evidence
+        if: ${{ steps.upstream.outputs.ready == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERIFY_RESULT: ${{ needs.verify-release.result }}
@@ -244,17 +295,16 @@ jobs:
           IMAGE_DIGEST: ${{ needs.push-image.outputs.image_digest }}
         run: |
           set -euo pipefail
-          [[ "$VERIFY_RESULT" == success && "$BUILD_RESULT" == success && "$PUBLISH_RESULT" == success && "$FINALIZE_RESULT" == success ]]
           release="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"; printf "%s" "$release" > release.json
           node tools/ci/release-resolver.mjs --verify-final release.json "$RELEASE_ID" "$RELEASE_TAG" > /dev/null
           docker pull "$IMAGE_REPOSITORY:$RELEASE_VERSION" >/dev/null; docker pull "$IMAGE_REPOSITORY:sha-$RELEASE_SHA" >/dev/null
           digest="$(docker image inspect "$IMAGE_REPOSITORY:$RELEASE_VERSION" --format "{{index .RepoDigests 0}}" | cut -d@ -f2)"; sha_digest="$(docker image inspect "$IMAGE_REPOSITORY:sha-$RELEASE_SHA" --format "{{index .RepoDigests 0}}" | cut -d@ -f2)"
-          test "$digest" = "$IMAGE_DIGEST" && test "$digest" = "$sha_digest"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] && test "$digest" = "$IMAGE_DIGEST" && test "$digest" = "$sha_digest"
           gh api "repos/$GITHUB_REPOSITORY/deployments?environment=production&sha=$RELEASE_SHA&per_page=100" > deployments.json
           deployment_id="$(node tools/ci/deployment-evidence.mjs deployment-id deployments.json production)"
           gh api "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses?per_page=1" > deployment-statuses.json
           node tools/ci/deployment-evidence.mjs require-success deployment-statuses.json
-          release_url="$(jq -r .html_url <<< "$release")"
+          release_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG"
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## Gateway $RELEASE_TAG published to Docker Hub
 
