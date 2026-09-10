@@ -1,8 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Path to coverage file (relative to repository root)
-COVERAGE_FILE="${COVERAGE_FILE:-test-results/backend-gateway-coverage.xml}"
+# Path to coverage file (relative to repository root). An explicitly empty value
+# means the workflow validated that coverage is unavailable and must not import it.
+if [[ ! -v COVERAGE_FILE ]]; then
+    COVERAGE_FILE="test-results/backend-gateway-coverage.xml"
+fi
 
 sanitize_csv_property() {
     local raw_value="${1:-}"
@@ -54,14 +57,12 @@ scanner_args=(
 if [[ -n "${PULL_REQUEST_ID:-}" ]]; then
     echo "Running Sonar begin for Pull Request ${PULL_REQUEST_ID}"
 
-    if [[ -n "$COVERAGE_FILE" ]]; then
+    if [[ -n "$COVERAGE_FILE" && -s "$COVERAGE_FILE" ]]; then
         scanner_args+=("/d:sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}")
 
-        if [[ -f "$COVERAGE_FILE" ]]; then
-            echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
-        else
-            echo "Coverage file is expected at ${COVERAGE_FILE}; Sonar will import it after tests generate it."
-        fi
+        echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
+    else
+        echo "WARNING: Coverage is unavailable; continuing without advisory coverage import."
     fi
 
     scanner_args+=(
@@ -82,14 +83,12 @@ else
         scanner_args+=("/d:sonar.branch.name=${BRANCH_NAME}")
     fi
 
-    if [[ -n "$COVERAGE_FILE" ]]; then
+    if [[ -n "$COVERAGE_FILE" && -s "$COVERAGE_FILE" ]]; then
         scanner_args+=("/d:sonar.cs.vscoveragexml.reportsPaths=${COVERAGE_FILE}")
 
-        if [[ -f "$COVERAGE_FILE" ]]; then
-            echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
-        else
-            echo "Coverage file is expected at ${COVERAGE_FILE}; Sonar will import it after tests generate it."
-        fi
+        echo "Coverage file found at ${COVERAGE_FILE}; will pass to Sonar."
+    else
+        echo "WARNING: Coverage is unavailable; continuing without advisory coverage import."
     fi
 fi
 

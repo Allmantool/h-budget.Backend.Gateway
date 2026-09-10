@@ -52,17 +52,41 @@ jobs:
         run: dotnet restore HomeBudgetBackendGateway.sln
       - name: Build solution
         run: dotnet build HomeBudgetBackendGateway.sln --configuration Release --no-restore --no-incremental
-      - name: Run Gateway tests with coverage
+      - id: tests
+        name: Run mandatory Gateway tests
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p test-results
           dotnet test HomeBudget.Backend.Gateway.Api.Tests/HomeBudget.Backend.Gateway.Api.Tests.csproj --configuration Release --no-build --no-restore --logger 'trx;LogFileName=Gateway.Tests.trx' --results-directory test-results
           node tools/ci/test-execution.mjs test-results/Gateway.Tests.trx
+      - id: coverage
+        name: Collect Gateway coverage (advisory)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
           dotnet tool update --global dotnet-coverage --version 18.4.1
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
           dotnet-coverage collect "dotnet test HomeBudget.Backend.Gateway.Api.Tests/HomeBudget.Backend.Gateway.Api.Tests.csproj --configuration Release --no-build --no-restore" -f xml -o test-results/backend-gateway-coverage.xml
-          test -s test-results/backend-gateway-coverage.xml
+      - name: Report advisory coverage collection outcome
+        if: ${{ always() }}
+        shell: bash
+        env:
+          COVERAGE_OUTCOME: ${{ steps.coverage.outcome }}
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          set -euo pipefail
+          if [[ "$TEST_OUTCOME" != success ]]; then
+            echo 'Coverage: BLOCKED because mandatory test execution did not succeed.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ "$COVERAGE_OUTCOME" == success && -s test-results/backend-gateway-coverage.xml ]]; then
+            echo 'Coverage: available for advisory reporting and Sonar import.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '::warning title=Gateway coverage unavailable::[GW-COV-001] Mandatory tests passed independently, but coverage collection is unavailable. Coverage is advisory; inspect this job and rerun after fixing the collector/report path.'
+            echo 'Coverage: UNKNOWN/UNAVAILABLE (advisory; mandatory test evidence remains authoritative).' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Upload test and coverage diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -178,6 +202,19 @@ jobs:
         with:
           name: gateway-test-results-${{ github.run_id }}
           path: test-results
+      - name: Prepare advisory coverage import
+        shell: bash
+        run: |
+          set -euo pipefail
+          coverage_report='test-results/backend-gateway-coverage.xml'
+          if command -v xmllint >/dev/null 2>&1 && [[ -s "$coverage_report" ]] && xmllint --noout "$coverage_report"; then
+            echo "COVERAGE_FILE=$coverage_report" >> "$GITHUB_ENV"
+            echo 'Coverage: available for Sonar import (advisory).' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'COVERAGE_FILE=' >> "$GITHUB_ENV"
+            echo '::warning title=Gateway coverage unavailable::[GW-COV-002] Coverage is missing or malformed and will not be imported. Tests remain mandatory; this advisory condition does not bypass Sonar quality-gate evaluation.'
+            echo 'Coverage: UNKNOWN/UNAVAILABLE (not imported).' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Require Sonar credentials
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

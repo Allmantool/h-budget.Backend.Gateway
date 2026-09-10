@@ -4,6 +4,7 @@ export const REQUIRED_COMMON_JOBS = Object.freeze([
   'security',
   'workflow-policy',
   'docker-verify',
+  'sonar',
 ]);
 
 export const REQUIRED_PR_JOBS = Object.freeze([

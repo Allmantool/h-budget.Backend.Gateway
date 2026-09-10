@@ -2,6 +2,8 @@
 
 > Current traceability is the three-workflow chain: required PR gate; qualified master semantic tag/draft provenance; tag-triggered Docker Hub publication, `production` Environment record, and final release trace block. The previous `publication-report`/PR-comment entries below are historical and removed from the active workflow.
 
+> Test execution is mandatory; coverage measurement/import is advisory and remains traceability evidence when available. The server-side Gateway Sonar gate owns the distinction between advisory coverage and mandatory non-coverage quality conditions.
+
 | Requirement | Implementation | Evidence |
 | --- | --- | --- |
 | PR intent and release impact | PR template, `release-policy` | conventional title/branch and policy tests |

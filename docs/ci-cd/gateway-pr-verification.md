@@ -2,6 +2,8 @@
 
 > Current policy: Sonar is mandatory and included in the common-quality aggregate. A missing token, skipped/cancelled job, scan failure, or failed quality gate fails `Gateway PR Gate`. Read-only inspection on 2026-09-09 found no `master` branch protection/ruleset, so an owner must require the observed GitHub Actions `Gateway PR Gate` check before this workflow becomes live merge enforcement.
 
+> Coverage policy: test execution and positive test-count evidence are mandatory. Coverage collection/import and low measured coverage are advisory. Missing or malformed coverage is reported as `UNKNOWN/UNAVAILABLE` and omitted from Sonar import; it never turns a failed test into success. The Gateway-only Sonar gate must remove coverage conditions while retaining every non-coverage condition.
+
 Run `npm run preflight:workflow` locally to execute the pinned workflow linter and Gateway helper fixtures with failure propagation. Sonar's evaluated server quality gate is hosted-only. A container smoke test blocked by an earlier required dependency is reported as blocked and does not count as success.
 
 Every PR to `master` provides purpose, acceptance criteria, implementation summary, updated tests or verification evidence, compatibility/operational impact, and expected release impact. For non-trivial executable changes, retain `requirement -> acceptance criterion -> implementation -> test/evidence`. Template checkboxes support review but never waive automation.
