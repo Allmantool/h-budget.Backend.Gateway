@@ -2,7 +2,7 @@
 
 > Current traceability is the three-workflow chain: required PR gate; qualified master semantic tag/draft provenance; tag-triggered Docker Hub publication, `production` Environment record, and final release trace block. The previous `publication-report`/PR-comment entries below are historical and removed from the active workflow.
 
-> Test execution is mandatory; coverage measurement/import is advisory and remains traceability evidence when available. The server-side Gateway Sonar gate owns the distinction between advisory coverage and mandatory non-coverage quality conditions.
+> Test execution is mandatory; coverage measurement/import is advisory and remains traceability evidence when available. The Gateway Sonar policy waits for the submitted server task and evaluates its exact analysis: only the verified `coverage` and `new_coverage` metrics are advisory, while every other rejected condition blocks.
 
 | Requirement | Implementation | Evidence |
 | --- | --- | --- |
@@ -12,6 +12,7 @@
 | Dependency security | `security` | transitive NuGet JSON audit, policy parser, npm audit |
 | Workflow automation | `workflow-policy` | pinned actionlint and Node fixtures |
 | Actual container behavior | `docker-verify` | transient TLS, health, Ocelot forwarding, invalid TLS configuration |
+| Sonar non-coverage policy | `sonar-noncoverage-policy.mjs` | exact compute task, analysis/revision correlation, structured gate response, coverage-only warning |
 | Fail-closed merge decision | `Gateway PR Gate` | explicit expected results in `pr-gate.mjs` |
 | Protected-master validation | `update_semver / verify` | reusable verification on resulting SHA |
 | Automatic publication decision and version | `update_semver / publish` | semantic-release lifecycle observation, stable tag/SHA guards, initial draft source marker |

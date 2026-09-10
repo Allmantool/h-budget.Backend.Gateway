@@ -49,8 +49,7 @@ scanner_args=(
     /v:"${GITHUB_RUN_ID}"
     /d:sonar.token="${SONAR_TOKEN}"
     /d:sonar.host.url="https://sonarcloud.io"
-    /d:sonar.qualitygate.wait=true
-    /d:sonar.qualitygate.timeout=300
+    /d:sonar.qualitygate.wait=false
 )
 
 # Determine if we are running in a pull request context
