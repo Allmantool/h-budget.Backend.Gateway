@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { analyzeCommits } from '@semantic-release/commit-analyzer';
-import releaseConfig, { BOOTSTRAP_VERSION, isStableTag } from '../../release.config.mjs';
+import releaseConfig, { BOOTSTRAP_VERSION, GATEWAY_RELEASE_SOURCE_TEMPLATE, isStableTag } from '../../release.config.mjs';
 import { classifyReleaseType, validatePullRequest } from './release-policy.mjs';
 
 const semanticReleaseConfig = releaseConfig.plugins[0][1];
@@ -58,13 +58,18 @@ test('keeps only the three production entry points and fail-closed quality requi
   assert.match(sonar, /\[\[ ! -v COVERAGE_FILE \]\]/);
   assert.match(release, /name: Gateway Build & Release/);
   assert.match(release, /GH_TOKEN: \$\{\{ secrets\.GH_PAT \}\}/);
-  assert.match(release, /gateway-release-source:start/);
+  assert.match(GATEWAY_RELEASE_SOURCE_TEMPLATE, /gateway-release-source:start/);
+  assert.match(GATEWAY_RELEASE_SOURCE_TEMPLATE, /<%= nextRelease\.gitHead %>/);
+  assert.equal(releaseConfig.plugins[2][1].releaseBodyTemplate, GATEWAY_RELEASE_SOURCE_TEMPLATE);
   assert.doesNotMatch(release, /uses:\s+\.\/\.github\/workflows\/release-tag\.yml/);
   assert.match(deployment, /push:\s+tags: \['v\*'\]/);
   assert.match(deployment, /workflow_dispatch/);
   assert.match(deployment, /run-name: Gateway Deploy/);
   assert.match(deployment, /MASTER_QUALITY_CHECK/);
-  assert.match(deployment, /matching source provenance after 60 seconds/);
+  assert.match(deployment, /RELEASE_NOT_FOUND_YET/);
+  assert.match(deployment, /RELEASE_API_ACCESS_DENIED/);
+  assert.match(deployment, /RELEASE_PRODUCER_FAILED/);
+  assert.match(deployment, /github\.event_name == 'workflow_dispatch' && inputs\.release_tag \|\| github\.ref_name/);
   assert.match(deployment, /environment:\s+name: production/);
   assert.doesNotMatch(deployment, /workflow_call|pull-requests: write|publication-report/);
 });

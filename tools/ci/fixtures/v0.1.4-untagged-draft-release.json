@@ -1,0 +1,9 @@
+{
+  "id": 386116542,
+  "tag_name": "untagged-df992713a16018f78c3e",
+  "target_commitish": "master",
+  "draft": true,
+  "prerelease": false,
+  "name": "v0.1.4",
+  "body": "## 0.1.4 (2026-09-10)\n\n<!-- gateway-release-source:start -->\n## Gateway release source\n\n- Commit: `a9051d26960a5a7f26c6da1503d22504926fba6c`\n- Master quality check: `Verify master quality / Confirm common Gateway quality checks`\n<!-- gateway-release-source:end -->"
+}
