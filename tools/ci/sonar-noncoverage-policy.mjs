@@ -3,8 +3,8 @@ import { resolve } from 'node:path';
 
 export const COVERAGE_METRIC_KEYS = new Set(['coverage', 'new_coverage']);
 
-function fail(reason) {
-  return { pass: false, reason };
+function fail(reason, rejected = [], ignoredConditions = false) {
+  return { pass: false, reason, rejected, ignoredConditions };
 }
 
 export function evaluateQualityGate(response) {
@@ -24,7 +24,7 @@ export function evaluateQualityGate(response) {
       continue;
     }
     if (condition.status === 'NO_VALUE' && condition.actualValue === undefined) continue;
-    return fail(`Sonar returned unsupported condition status '${condition.status}' for '${condition.metricKey}'.`);
+    return fail('Sonar returned an unsupported condition status.', rejected, gate.ignoredConditions);
   }
 
   if (gate.status === 'OK') {
@@ -32,11 +32,11 @@ export function evaluateQualityGate(response) {
       ? { pass: true, coverageWarning: false, ignoredConditions: gate.ignoredConditions, rejected: [] }
       : fail('Sonar reported an OK gate with rejected condition evidence.');
   }
-  if (gate.status !== 'ERROR') return fail(`Sonar returned unexpected quality-gate status '${gate.status}'.`);
-  if (rejected.length === 0) return fail('Sonar reported an ERROR gate without rejected condition evidence.');
+  if (gate.status !== 'ERROR') return fail('Sonar returned an unexpected quality-gate status.', rejected, gate.ignoredConditions);
+  if (rejected.length === 0) return fail('Sonar reported an ERROR gate without rejected condition evidence.', rejected, gate.ignoredConditions);
 
   const nonCoverageFailure = rejected.find(condition => !COVERAGE_METRIC_KEYS.has(condition.metricKey));
-  if (nonCoverageFailure) return fail(`Sonar rejected mandatory non-coverage metric '${nonCoverageFailure.metricKey}'.`);
+  if (nonCoverageFailure) return fail('Sonar rejected mandatory non-coverage conditions.', rejected, gate.ignoredConditions);
   return { pass: true, coverageWarning: true, ignoredConditions: gate.ignoredConditions, rejected };
 }
 
@@ -110,7 +110,7 @@ export async function waitForCompletedTask({ serverUrl, ceTaskId, projectKey, to
       return task;
     }
     if (task.status === 'FAILED' || task.status === 'CANCELED') throw new Error(`Sonar compute task ended as ${task.status}.`);
-    if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') throw new Error(`Sonar compute task returned unexpected status '${task.status}'.`);
+    if (task.status !== 'PENDING' && task.status !== 'IN_PROGRESS') throw new Error('Sonar compute task returned an unexpected status.');
     if (attempt === attempts - 1) break;
     await sleep();
   }
@@ -148,11 +148,44 @@ export async function evaluateExactAnalysis({ reportTaskFile, serverUrl, project
   const analysis = await findExactAnalysis({ serverUrl, projectKey, analysisId: task.analysisId, revision, pullRequestId, branchName, token, fetchImpl });
   const gate = await fetchJson(apiUrl(serverUrl, '/api/qualitygates/project_status', { analysisId: task.analysisId }), token, fetchImpl);
   const decision = evaluateQualityGate(gate);
-  if (!decision.pass) throw new Error(decision.reason);
-  return { analysis, task, decision };
+  return { analysis, task, decision, gate };
 }
 
-async function writeSummary(message) {
+function sanitizeSummaryValue(value) {
+  return String(value ?? 'unavailable').replaceAll(/[\r\n\u001b]/gu, '_').slice(0, 256);
+}
+
+function humanReadableValue(condition) {
+  if (!condition.metricKey.endsWith('_rating')) return sanitizeSummaryValue(condition.actualValue);
+  return { 1: '1 (A)', 2: '2 (B)', 3: '3 (C)', 4: '4 (D)', 5: '5 (E)' }[condition.actualValue] ?? 'unrecognized rating';
+}
+
+function formatCondition(condition) {
+  const comparator = { GT: '>', LT: '<', GTE: '>=', LTE: '<=', EQ: '=' }[condition.comparator] ?? 'unrecognized comparator';
+  return [
+    `Metric: ${sanitizeSummaryValue(condition.metricKey)}`,
+    `Status: ${sanitizeSummaryValue(condition.status)}`,
+    `Observed: ${humanReadableValue(condition)}`,
+    `Required: ${comparator} ${sanitizeSummaryValue(condition.errorThreshold)}`,
+  ];
+}
+
+export function formatEvaluation(result, pullRequestId, branchName) {
+  const rejected = result.decision.rejected ?? [];
+  const nonCoverage = rejected.filter(condition => !COVERAGE_METRIC_KEYS.has(condition.metricKey));
+  const identity = pullRequestId ? `PR ${pullRequestId}` : `branch ${branchName}`;
+  const lines = [
+    `Gateway non-coverage policy: ${result.decision.pass ? 'PASSED' : 'FAILED'}`,
+    `Analysis: ${sanitizeSummaryValue(result.analysis.key)}, revision ${sanitizeSummaryValue(result.analysis.revision)}, ${sanitizeSummaryValue(identity)}`,
+  ];
+  for (const condition of nonCoverage) lines.push(...formatCondition(condition));
+  if (!result.decision.pass && nonCoverage.length === 0) lines.push('Diagnostic: gate evidence was incomplete or contradictory.');
+  lines.push(`Coverage: ${rejected.some(condition => COVERAGE_METRIC_KEYS.has(condition.metricKey)) ? 'advisory; not this blocking condition' : 'advisory; no rejected coverage condition'}`);
+  return lines;
+}
+
+async function writeSummary(lines) {
+  const message = lines.map(sanitizeSummaryValue).join('\n');
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `${message}\n`);
   console.log(message);
 }
@@ -171,10 +204,10 @@ if (import.meta.main) {
       branchName: process.env.GITHUB_REF_NAME ?? '',
       token: process.env.SONAR_TOKEN ?? '',
     });
-    const nativeStatus = result.decision.coverageWarning ? 'FAILED (coverage only)' : 'PASSED';
-    await writeSummary(`Analysis processing: SUCCESS\nSonar native gate: ${nativeStatus}\nGateway non-coverage policy: PASSED\nCoverage: ${result.decision.coverageWarning ? 'ADVISORY — reported failure does not block Gateway CI' : 'available without a rejected threshold'}`);
+    await writeSummary(['Analysis processing: SUCCESS', ...formatEvaluation(result, process.env.PULL_REQUEST_ID ?? '', process.env.GITHUB_REF_NAME ?? '')]);
+    if (!result.decision.pass) process.exitCode = 1;
   } catch (error) {
-    await writeSummary(`Gateway non-coverage policy: FAILED — ${error.message}`);
+    await writeSummary(['Gateway non-coverage policy: FAILED', 'Diagnostic: submitted Sonar evidence could not be safely validated.']);
     process.exitCode = 1;
   }
 }

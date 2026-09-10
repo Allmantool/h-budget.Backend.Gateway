@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { evaluateExactAnalysis, evaluateQualityGate, fetchJson, locateReportTask, parseReportTask } from './sonar-noncoverage-policy.mjs';
+import { evaluateExactAnalysis, evaluateQualityGate, fetchJson, formatEvaluation, locateReportTask, parseReportTask } from './sonar-noncoverage-policy.mjs';
 
 function gate(status, conditions, ignoredConditions = false) {
   return { projectStatus: { status, conditions, ignoredConditions } };
@@ -145,12 +145,52 @@ test('uses the submitted pull-request identity when correlating an analysis', as
   });
 });
 
+test('preserves a security rejection and reports actionable sanitized condition details', async () => {
+  await withReportTask(async reportTaskFile => {
+    const result = await evaluateExactAnalysis({
+      reportTaskFile,
+      serverUrl: 'https://sonarcloud.io',
+      projectKey: 'Allmantool_h-budget-backend-gateway',
+      revision: 'candidate-sha',
+      branchName: 'master',
+      token: 'fixture-token',
+      fetchImpl: successfulFetch({
+        gateResponse: gate('ERROR', [
+          condition('new_coverage', 'ERROR', '0.0'),
+          { ...condition('new_security_rating', 'ERROR', '2'), comparator: 'GT', errorThreshold: '1' },
+        ]),
+      }),
+      sleep: async () => {},
+    });
+    assert.equal(result.decision.pass, false);
+    assert.equal(result.decision.rejected.length, 2);
+    const summary = formatEvaluation(result, '', 'master').join('\n');
+    assert.match(summary, /Analysis: analysis-123, revision candidate-sha, branch master/);
+    assert.match(summary, /Metric: new_security_rating/);
+    assert.match(summary, /Status: ERROR/);
+    assert.match(summary, /Observed: 2 \(B\)/);
+    assert.match(summary, /Required: > 1/);
+    assert.match(summary, /Coverage: advisory; not this blocking condition/);
+  });
+});
+
+test('sanitizes control characters from remote diagnostic values', () => {
+  const lines = formatEvaluation({
+    analysis: { key: 'analysis-123\nforged', revision: 'candidate-sha\rforged' },
+    decision: {
+      pass: false,
+      rejected: [{ metricKey: 'new_security_rating\nforged', status: 'ERROR\rforged', actualValue: '2', comparator: 'GT', errorThreshold: '1\nforged' }],
+    },
+  }, '', 'master\nforged');
+  assert.equal(lines.some(line => /[\r\n]/u.test(line)), false);
+  assert.match(lines.join(' '), /forged/);
+});
+
 for (const [name, options, expected] of [
   ['failed compute task', { taskStatuses: ['FAILED'] }, /ended as FAILED/],
   ['cancelled compute task', { taskStatuses: ['CANCELED'] }, /ended as CANCELED/],
   ['wrong compute-task project', { taskProject: 'another-project' }, /does not match the scanned project/],
   ['stale analysis revision', { revision: 'stale-sha' }, /revision does not match/],
-  ['non-coverage gate rejection', { gateResponse: gate('ERROR', [condition('new_reliability_rating', 'ERROR')]) }, /mandatory non-coverage metric/],
 ]) {
   test(`fails closed for ${name}`, async () => {
     await withReportTask(async reportTaskFile => {
@@ -167,6 +207,23 @@ for (const [name, options, expected] of [
     });
   });
 }
+
+test('returns a failed decision for a non-coverage rejection', async () => {
+  await withReportTask(async reportTaskFile => {
+    const result = await evaluateExactAnalysis({
+      reportTaskFile,
+      serverUrl: 'https://sonarcloud.io',
+      projectKey: 'Allmantool_h-budget-backend-gateway',
+      revision: 'candidate-sha',
+      branchName: 'master',
+      token: 'fixture-token',
+      fetchImpl: successfulFetch({ gateResponse: gate('ERROR', [condition('new_reliability_rating', 'ERROR')]) }),
+      sleep: async () => {},
+    });
+    assert.equal(result.decision.pass, false);
+    assert.match(result.decision.reason, /mandatory non-coverage conditions/);
+  });
+});
 
 test('fails after a finite pending-task timeout', async () => {
   await withReportTask(async reportTaskFile => {
