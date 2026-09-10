@@ -12,7 +12,7 @@
 | Dependency security | `security` | transitive NuGet JSON audit, policy parser, npm audit |
 | Workflow automation | `workflow-policy` | pinned actionlint and Node fixtures |
 | Actual container behavior | `docker-verify` | transient TLS, health, Ocelot forwarding, invalid TLS configuration |
-| Sonar non-coverage policy | `sonar-noncoverage-policy.mjs` | exact compute task, analysis/revision correlation, structured gate response, coverage-only warning |
+| Sonar non-coverage policy | `sonar-noncoverage-policy.mjs` | exact compute task and analysis-ID gate response; PR source/base/current-SHA or branch analysis-revision correlation; structured gate response; coverage-only warning |
 | Fail-closed merge decision | `Gateway PR Gate` | explicit expected results in `pr-gate.mjs` |
 | Protected-master validation | `update_semver / verify` | reusable verification on resulting SHA |
 | Automatic publication decision and version | `update_semver / publish` | semantic-release lifecycle observation, stable tag/SHA guards, initial draft source marker |

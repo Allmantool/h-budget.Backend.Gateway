@@ -187,10 +187,10 @@ jobs:
     timeout-minutes: 30
     needs: build-and-test
     steps:
-      - name: Check out merge candidate
+      - name: Check out selected Sonar source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Set up .NET SDK
@@ -226,11 +226,19 @@ jobs:
       - name: Run configured Sonar analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_EXPECTED_REVISION: ${{ github.sha }}
+          SONAR_EXPECTED_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          SONAR_MERGE_CANDIDATE_REVISION: ${{ github.sha }}
           PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
           PULL_REQUEST_SOURCE_BRANCH: ${{ github.head_ref }}
           PULL_REQUEST_TARGET_BRANCH: ${{ github.base_ref }}
         run: |
+          sonar_source_revision="$(git rev-parse HEAD)"
+          [[ "$sonar_source_revision" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$sonar_source_revision" == "$SONAR_EXPECTED_REVISION" ]]
+          {
+            echo "Sonar source SHA: $sonar_source_revision"
+            echo "Build/test merge-candidate SHA: $SONAR_MERGE_CANDIDATE_REVISION"
+          } >> "$GITHUB_STEP_SUMMARY"
           dotnet tool update --global dotnet-sonarscanner --version 9.0.2
           chmod +x ./startsonar.sh
           ./startsonar.sh
@@ -239,8 +247,10 @@ jobs:
       - name: Evaluate exact Sonar analysis and Gateway non-coverage policy
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_EXPECTED_REVISION: ${{ github.sha }}
+          SONAR_EXPECTED_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
+          PULL_REQUEST_SOURCE_BRANCH: ${{ github.head_ref }}
+          PULL_REQUEST_TARGET_BRANCH: ${{ github.base_ref }}
         run: node tools/ci/sonar-noncoverage-policy.mjs
 
   common-quality-gate:
