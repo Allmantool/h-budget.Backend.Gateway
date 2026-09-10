@@ -74,4 +74,10 @@ test('keeps only the three production entry points and fail-closed quality requi
   assert.match(deployment, /github\.event_name == 'workflow_dispatch' && inputs\.release_tag \|\| github\.ref_name/);
   assert.match(deployment, /environment:\s+name: production/);
   assert.doesNotMatch(deployment, /workflow_call|pull-requests: write|publication-report/);
+  const reportJob = deployment.slice(deployment.indexOf('  delivery-result:'));
+  assert.ok(reportJob.indexOf('Check out reporting automation') < reportJob.indexOf('Use Node.js for reporting helpers'));
+  assert.ok(reportJob.indexOf('Use Node.js for reporting helpers') < reportJob.indexOf('Verify reporting workspace'));
+  assert.ok(reportJob.indexOf('Verify reporting workspace') < reportJob.indexOf('node tools/ci/release-resolver.mjs --verify-final'));
+  assert.match(reportJob, /node tools\/ci\/report-workspace\.mjs/);
+  assert.match(reportJob, /test "\$digest" = "\$IMAGE_DIGEST" && test "\$digest" = "\$sha_digest"/);
 });
