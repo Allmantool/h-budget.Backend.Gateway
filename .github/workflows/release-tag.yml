@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     permissions:
+      actions: read
       contents: write
     outputs:
       release_tag: ${{ steps.release.outputs.release_tag }}
@@ -57,17 +58,54 @@ jobs:
           jq -e --arg name "$MASTER_QUALITY_CHECK" '[.check_runs[] | select(.name == $name and .app.slug == "github-actions" and .status == "completed" and .conclusion == "success")] | length > 0' check-runs.json > /dev/null || {
             echo "No successful trusted master-quality check named '$MASTER_QUALITY_CHECK' exists for $release_sha." >&2; exit 1; }
           release_id=''
+          release_code='RELEASE_NOT_FOUND_YET'
+          release_detail='No release lookup was attempted.'
+          api_failure=''
           for _ in $(seq 1 12); do
-            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.ndjson
-            jq -s 'flatten' releases.ndjson > releases.json
-            if node tools/ci/release-resolver.mjs releases.json "$RELEASE_TAG" "$release_sha" > resolved.json 2> resolver-error.txt; then
-              candidate_id="$(jq -er '.releaseId' resolved.json)"
-              gh api "repos/$GITHUB_REPOSITORY/releases/$candidate_id" > release.json
-              if node tools/ci/release-resolver.mjs --verify release.json "$candidate_id" "$RELEASE_TAG" "$release_sha" > /dev/null 2> resolver-error.txt; then release_id="$candidate_id"; break; fi
+            if ! gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.ndjson 2> api-error.txt; then
+              api_failure="$(<api-error.txt)"
+              if grep -Eq 'HTTP 401|HTTP 403|Resource not accessible' api-error.txt; then release_code='RELEASE_API_ACCESS_DENIED'; else release_code='RELEASE_API_ERROR'; fi
+              release_detail="$api_failure"
+              break
             fi
+            jq -s 'flatten' releases.ndjson > releases.json
+            discovery="$(node tools/ci/release-resolver.mjs releases.json "$RELEASE_TAG" "$release_sha")"
+            release_code="$(jq -r '.code' <<< "$discovery")"
+            release_detail="$(jq -r '.detail // empty' <<< "$discovery")"
+            if [[ "$release_code" == RELEASE_READY ]]; then
+              candidate_id="$(jq -er '.releaseId' <<< "$discovery")"
+              if ! gh api "repos/$GITHUB_REPOSITORY/releases/$candidate_id" > release.json 2> api-error.txt; then
+                api_failure="$(<api-error.txt)"
+                if grep -Eq 'HTTP 401|HTTP 403|Resource not accessible' api-error.txt; then release_code='RELEASE_API_ACCESS_DENIED'; else release_code='RELEASE_API_ERROR'; fi
+                release_detail="$api_failure"
+                break
+              fi
+              if node tools/ci/release-resolver.mjs --verify release.json "$candidate_id" "$RELEASE_TAG" "$release_sha" > /dev/null 2> resolver-error.txt; then
+                release_id="$candidate_id"
+                break
+              fi
+              release_code='RELEASE_METADATA_INVALID'
+              release_detail="$(<resolver-error.txt)"
+              break
+            fi
+            [[ "$release_code" == RELEASE_NOT_FOUND_YET || "$release_code" == RELEASE_METADATA_PENDING ]] || break
             sleep 5
           done
-          [[ -n "$release_id" ]] || { echo "Release metadata for $RELEASE_TAG was not available with matching source provenance after 60 seconds." >&2; cat resolver-error.txt >&2 || true; exit 1; }
+          if [[ -z "$release_id" && "$release_code" != RELEASE_API_ACCESS_DENIED && "$release_code" != RELEASE_API_ERROR ]]; then
+            if gh api "repos/$GITHUB_REPOSITORY/actions/workflows/update_semver.yml/runs?head_sha=$release_sha&per_page=1" > producer-runs.json 2> api-error.txt; then
+              producer_status="$(jq -r '.workflow_runs[0].status // empty' producer-runs.json)"
+              producer_conclusion="$(jq -r '.workflow_runs[0].conclusion // empty' producer-runs.json)"
+              if [[ "$producer_status" == completed && "$producer_conclusion" != success ]]; then
+                release_code='RELEASE_PRODUCER_FAILED'
+                release_detail="Gateway Build & Release completed with conclusion $producer_conclusion."
+              fi
+            else
+              api_failure="$(<api-error.txt)"
+              if grep -Eq 'HTTP 401|HTTP 403|Resource not accessible' api-error.txt; then release_code='RELEASE_API_ACCESS_DENIED'; else release_code='RELEASE_API_ERROR'; fi
+              release_detail="$api_failure"
+            fi
+          fi
+          [[ -n "$release_id" ]] || { echo "::error title=$release_code::$release_detail"; echo "$release_code: $release_detail" >&2; exit 1; }
           { echo "release_tag=$RELEASE_TAG"; echo "release_version=${RELEASE_TAG#v}"; echo "release_sha=$release_sha"; echo "release_id=$release_id"; } >> "$GITHUB_OUTPUT"
 
   build-image:
@@ -112,7 +150,7 @@ jobs:
           tools/ci/container-smoke.sh --image "${{ env.GATEWAY_IMAGE_REPOSITORY }}:${{ needs.verify-release.outputs.release_version }}" --mode invalid-config
 
   push-image:
-    name: Publish Gateway ${{ needs.verify-release.outputs.release_tag }} to Docker Hub
+    name: Publish Gateway ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }} to Docker Hub
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [verify-release, build-image]
@@ -147,7 +185,7 @@ jobs:
           test -n "$digest" && test "$digest" = "$sha_digest"; echo "image_digest=$digest" >> "$GITHUB_OUTPUT"
 
   finalize-release:
-    name: Finalize GitHub Release ${{ needs.verify-release.outputs.release_tag }}
+    name: Finalize GitHub Release ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [verify-release, build-image, push-image]
@@ -182,7 +220,7 @@ jobs:
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --input release-update.json > /dev/null
 
   delivery-result:
-    name: Report Gateway ${{ needs.verify-release.outputs.release_tag }} publication
+    name: Report Gateway ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }} publication
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10

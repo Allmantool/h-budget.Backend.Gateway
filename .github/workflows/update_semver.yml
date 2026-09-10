@@ -118,19 +118,6 @@ jobs:
           test "$release_sha" = "$(git rev-parse HEAD)"
           release_id="$(jq -r '.releaseId // empty' <<< "$decision")"
           [[ "$release_id" =~ ^[1-9][0-9]*$ ]] || { echo 'Release creation completed without a numeric REST release ID.' >&2; exit 1; }
-          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" --jq '.body' > release-notes.md
-          sed '/<!-- gateway-release-source:start -->/,/<!-- gateway-release-source:end -->/d' release-notes.md > updated-release-notes.md
-          cat >> updated-release-notes.md <<EOF
-
-          <!-- gateway-release-source:start -->
-          ## Gateway release source
-
-          - Commit: \`$release_sha\`
-          - Master quality check: \`Verify master quality / Confirm common Gateway quality checks\`
-          <!-- gateway-release-source:end -->
-          EOF
-          jq -n --rawfile body updated-release-notes.md '{body: $body}' > release-update.json
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" --input release-update.json > /dev/null
           {
             echo "decision=$(jq -r '.decision' <<< "$decision")"
             echo "release_type=$(jq -r '.releaseType // empty' <<< "$decision")"

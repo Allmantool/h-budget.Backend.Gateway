@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { readFile } from 'node:fs/promises';
+
 import { evaluateDelivery } from './delivery-result.mjs';
 import { resolveReleaseDecision } from './release-decision.mjs';
 import { githubReleaseId } from './release-observer.mjs';
-import { resolveExactRelease, validateFinalReleaseIdentity, validateReleaseIdentity } from './release-resolver.mjs';
+import { discoverRelease, RELEASE_READINESS, resolveExactRelease, validateFinalReleaseIdentity, validateReleaseIdentity } from './release-resolver.mjs';
 
 test('uses semantic-release observer data without independently calculating a version', () => {
   const decision = resolveReleaseDecision({
@@ -39,31 +41,41 @@ test('records the numeric REST ID returned by the locked GitHub publish plugin',
   assert.throws(() => githubReleaseId([{ name: 'GitHub release', id: 'node-id' }]), /numeric GitHub Release ID/);
 });
 
-test('resolves an accessible draft by exact tag instead of a published-only tag endpoint', () => {
-  const release = resolveExactRelease([
-    { id: 385437440, tag_name: 'v0.1.0', draft: true },
-    { id: 99, tag_name: 'v0.0.796', draft: false },
-  ], 'v0.1.0');
-  assert.deepEqual(release, { releaseId: 385437440, tag: 'v0.1.0', draft: true });
+test('discovers GitHub draft releases by stable name and source provenance', async () => {
+  const release = JSON.parse(await readFile(new URL('./fixtures/v0.1.4-untagged-draft-release.json', import.meta.url), 'utf8'));
+  const sourceSha = 'a9051d26960a5a7f26c6da1503d22504926fba6c';
+  assert.deepEqual(discoverRelease([release], 'v0.1.4', sourceSha), {
+    code: RELEASE_READINESS.READY,
+    retryable: false,
+    releaseId: 386116542,
+    tag: 'v0.1.4',
+    draft: true,
+  });
+  assert.deepEqual(resolveExactRelease([release], 'v0.1.4', sourceSha), { releaseId: 386116542, tag: 'v0.1.4', draft: true });
 });
 
-test('fails closed for missing, ambiguous, or non-numeric recovered release identities', () => {
-  assert.throws(() => resolveExactRelease([], 'v0.1.0'), /exactly one/);
-  assert.throws(() => resolveExactRelease([{ id: 1, tag_name: 'v0.1.0' }, { id: 2, tag_name: 'v0.1.0' }], 'v0.1.0'), /exactly one/);
-  assert.throws(() => resolveExactRelease([{ id: 'node-id', tag_name: 'v0.1.0' }], 'v0.1.0'), /numeric REST release ID/);
+test('reports distinct discovery diagnostics for missing, metadata, and ambiguity states', () => {
+  const sourceSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  assert.equal(discoverRelease([], 'v0.1.0', sourceSha).code, RELEASE_READINESS.NOT_FOUND_YET);
+  assert.equal(discoverRelease([{ id: 1, draft: true, name: 'v0.1.0', body: '' }], 'v0.1.0', sourceSha).code, RELEASE_READINESS.METADATA_PENDING);
+  assert.equal(discoverRelease([{ id: 1, draft: true, name: 'v0.1.0', body: '<!-- gateway-release-source:start -->\n- Commit: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`\n<!-- gateway-release-source:end -->' }], 'v0.1.0', sourceSha).code, RELEASE_READINESS.METADATA_MISMATCH);
+  assert.equal(discoverRelease([{ id: 1, draft: true, name: 'v0.1.0', body: `<!-- gateway-release-source:start -->\n- Tag: \`v0.2.0\`\n- Commit: \`${sourceSha}\`\n<!-- gateway-release-source:end -->` }], 'v0.1.0', sourceSha).code, RELEASE_READINESS.METADATA_MISMATCH);
+  assert.equal(discoverRelease([{ id: 1, draft: true, name: 'v0.1.0', body: '<!-- gateway-release-source:start -->\n<!-- gateway-release-source:end -->' }], 'v0.1.0', sourceSha).code, RELEASE_READINESS.METADATA_INVALID);
+  assert.equal(discoverRelease([{ id: 1, draft: true, name: 'v0.1.0' }, { id: 2, tag_name: 'v0.1.0', draft: false }], 'v0.1.0', sourceSha).code, RELEASE_READINESS.AMBIGUOUS);
 });
 
 test('rejects wrong ID, tag, or draft state before a release can be finalized', () => {
   const draft = { id: 385437440, tag_name: 'v0.1.0', draft: true };
   assert.throws(() => validateReleaseIdentity(draft, 1, 'v0.1.0'), /expected numeric REST release ID/);
-  assert.throws(() => validateReleaseIdentity(draft, 385437440, 'v0.1.1'), /not tagged/);
+  assert.throws(() => validateReleaseIdentity(draft, 385437440, 'v0.1.1'), /not named/);
   assert.throws(() => validateReleaseIdentity({ ...draft, draft: undefined }, 385437440, 'v0.1.0'), /draft state/);
 });
 
 test('requires release metadata to bind a recovery tag to its qualified source', () => {
-  const release = { id: 385437440, tag_name: 'v0.1.0', draft: true, body: '<!-- gateway-release-source:start -->\n- Commit: `source-sha`\n<!-- gateway-release-source:end -->' };
-  assert.equal(validateReleaseIdentity(release, 385437440, 'v0.1.0', 'source-sha').releaseId, 385437440);
-  assert.throws(() => validateReleaseIdentity(release, 385437440, 'v0.1.0', 'other-sha'), /source provenance/);
+  const sourceSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const release = { id: 385437440, tag_name: 'untagged-release', name: 'v0.1.0', draft: true, body: `<!-- gateway-release-source:start -->\n- Commit: \`${sourceSha}\`\n<!-- gateway-release-source:end -->` };
+  assert.equal(validateReleaseIdentity(release, 385437440, 'v0.1.0', sourceSha).releaseId, 385437440);
+  assert.throws(() => validateReleaseIdentity(release, 385437440, 'v0.1.0', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'), /source provenance/);
 });
 
 test('accepts only an exact non-draft release during final readback', () => {
