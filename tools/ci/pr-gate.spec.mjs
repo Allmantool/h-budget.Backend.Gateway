@@ -36,6 +36,8 @@ for (const [name, mutate, expected] of [
   ['missing required job', results => { delete results['docker-verify']; }, 'docker-verify: missing'],
   ['zero-test suite represented as failed test validation', results => { results['build-and-test'] = { result: 'failure' }; }, 'build-and-test: failure'],
   ['security scanner outage represented as failed security validation', results => { results.security = { result: 'failure' }; }, 'security: failure'],
+  ['required Sonar job is missing', results => { delete results.sonar; }, 'sonar: missing'],
+  ['required Sonar job is cancelled', results => { results.sonar = { result: 'cancelled' }; }, 'sonar: cancelled'],
 ]) {
   test(`common quality fails closed for ${name}`, () => {
     const results = structuredClone(successfulCommon);

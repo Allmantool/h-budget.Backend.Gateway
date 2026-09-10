@@ -19,6 +19,8 @@
 
 Use `npm run preflight:workflow` for local workflow/helper validation. It preserves failing actionlint and test exit codes; Sonar quality-gate evaluation remains hosted-only.
 
+Coverage is advisory. Record mandatory test execution separately; a missing coverage report must be identified as `UNKNOWN/UNAVAILABLE`, never presented as test success.
+
 ## Author checklist
 
 - [ ] The PR title follows the release policy and the branch intent matches it.

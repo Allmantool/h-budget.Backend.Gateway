@@ -48,9 +48,14 @@ test('keeps only the three production entry points and fail-closed quality requi
   assert.match(pr, /run-name: Gateway PR #/);
   assert.match(common, /SONAR_TOKEN:\s+required: true/);
   assert.match(common, /Enforce Sonar quality gate/);
+  assert.match(common, /Run mandatory Gateway tests/);
+  assert.match(common, /Collect Gateway coverage \(advisory\)[\s\S]*?continue-on-error: true/);
+  assert.match(common, /Coverage: UNKNOWN\/UNAVAILABLE/);
+  assert.match(common, /Prepare advisory coverage import/);
   assert.match(common, /GATE_REQUIRED_JOBS: validate-configuration,build-and-test,security,workflow-policy,docker-verify,sonar/);
   assert.doesNotMatch(common, /optional Sonar|sonar-mode/);
   assert.match(sonar, /sonar\.qualitygate\.wait=true/);
+  assert.match(sonar, /\[\[ ! -v COVERAGE_FILE \]\]/);
   assert.match(release, /name: Gateway Build & Release/);
   assert.match(release, /GH_TOKEN: \$\{\{ secrets\.GH_PAT \}\}/);
   assert.match(release, /gateway-release-source:start/);
