@@ -21,7 +21,10 @@ namespace HomeBudget.Backend.Gateway.Api.Tests
                     ["SslOptions:HttpPort"] = "5000",
                     ["SslOptions:HttpsPort"] = "5001",
                     ["SslOptions:CertificateName"] = "dummy.pfx",
-                    ["SslOptions:Password"] = "dummy"
+                    ["SslOptions:Password"] = "dummy-secret",
+                    ["MigrationContract:EnvironmentIdentity"] = "vm2-test",
+                    ["MigrationContract:InstanceIdentity"] = "gateway-test-instance",
+                    ["MigrationContract:Commit"] = "test-commit"
                 };
 
                 config.AddInMemoryCollection(inMemory);
