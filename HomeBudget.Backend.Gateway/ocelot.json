@@ -71,6 +71,7 @@
       "UpstreamPathTemplate": "/gateway/accounting/payments-history/query/{paymentAccountId}",
       "UpstreamHttpMethod": [ "GET" ],
       "DownstreamPathTemplate": "/payments-history/query/{paymentAccountId}",
+      "Priority": 100,
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
@@ -80,9 +81,10 @@
       ]
     },
     {
-      "UpstreamPathTemplate": "/gateway/accounting/{entity}/{paymentAccountId}/byId/{operationId}",
+      "UpstreamPathTemplate": "/gateway/accounting/payments-history/{accountId}/byId/{operationId}",
       "UpstreamHttpMethod": [ "GET" ],
-      "DownstreamPathTemplate": "/{entity}/{paymentAccountId}/byId/{operationId}",
+      "DownstreamPathTemplate": "/payments-history/{accountId}/byId/{operationId}",
+      "Priority": 100,
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
@@ -91,24 +93,11 @@
         }
       ]
     },
-
     {
-      "UpstreamPathTemplate": "/gateway/accounting/{entity}/{paymentAccountId}",
-      "UpstreamHttpMethod": [ "GET", "POST", "DELETE", "PATCH" ],
-      "DownstreamPathTemplate": "/{entity}/{paymentAccountId}",
-      "DownstreamScheme": "http",
-      "DownstreamHostAndPorts": [
-        {
-          "Host": "homebudget-accounting-api",
-          "Port": 80
-        }
-      ]
-    },
-
-    {
-      "UpstreamPathTemplate": "/gateway/accounting/{service}",
+      "UpstreamPathTemplate": "/gateway/accounting/payments-history/{accountId}",
       "UpstreamHttpMethod": [ "GET" ],
-      "DownstreamPathTemplate": "/{service}",
+      "DownstreamPathTemplate": "/payments-history/{accountId}",
+      "Priority": 100,
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
@@ -117,11 +106,167 @@
         }
       ]
     },
-
     {
-      "UpstreamPathTemplate": "/gateway/{service}/byId/{id}",
+      "UpstreamPathTemplate": "/gateway/accounting/payment-operations/{accountId}/commands/{commandId}",
       "UpstreamHttpMethod": [ "GET" ],
-      "DownstreamPathTemplate": "/{service}/byId/{id}",
+      "DownstreamPathTemplate": "/payment-operations/{accountId}/commands/{commandId}",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/payment-operations/{accountId}/{operationId}",
+      "UpstreamHttpMethod": [ "DELETE", "PATCH" ],
+      "DownstreamPathTemplate": "/payment-operations/{accountId}/{operationId}",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/payment-operations/{accountId}",
+      "UpstreamHttpMethod": [ "POST" ],
+      "DownstreamPathTemplate": "/payment-operations/{accountId}",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/payment-accounts/byId/{id}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/payment-accounts/byId/{id}",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/payment-accounts/{id}",
+      "UpstreamHttpMethod": [ "DELETE", "PATCH" ],
+      "DownstreamPathTemplate": "/payment-accounts/{id}",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/payment-accounts",
+      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "DownstreamPathTemplate": "/payment-accounts",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/categories/byId/{id}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/categories/byId/{id}",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/categories",
+      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "DownstreamPathTemplate": "/categories",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/contractors/byId/{id}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/contractors/byId/{id}",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/contractors",
+      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "DownstreamPathTemplate": "/contractors",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/cross-accounts-transfer/{transferId}/commands/{commandId}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/cross-accounts-transfer/{transferId}/commands/{commandId}",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/cross-accounts-transfer/byId/{transferId}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/cross-accounts-transfer/byId/{transferId}",
+      "Priority": 100,
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
+      "UpstreamPathTemplate": "/gateway/accounting/cross-accounts-transfer",
+      "UpstreamHttpMethod": [ "POST", "DELETE", "PATCH" ],
+      "DownstreamPathTemplate": "/cross-accounts-transfer",
+      "Priority": 100,
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {
@@ -135,6 +280,7 @@
       "UpstreamPathTemplate": "/gateway/{service}",
       "UpstreamHttpMethod": [ "GET", "POST" ],
       "DownstreamPathTemplate": "/{service}",
+      "Priority": 0,
       "DownstreamScheme": "http",
       "DownstreamHostAndPorts": [
         {

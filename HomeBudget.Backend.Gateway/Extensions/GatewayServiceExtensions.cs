@@ -8,6 +8,7 @@ using Ocelot.Provider.Polly;
 
 using HomeBudget.Backend.Gateway.Configuration;
 using HomeBudget.Backend.Gateway.Constants;
+using HomeBudget.Backend.Gateway.MigrationContract;
 using HomeBudget.Core.Options;
 
 namespace HomeBudget.Backend.Gateway.Extensions;
@@ -21,6 +22,8 @@ internal static class GatewayServiceExtensions
         var configuration = builder.Configuration;
 
         services.AddControllers();
+        services.Configure<MigrationContractOptions>(
+            configuration.GetSection(MigrationContractOptions.SectionName));
         services.AddOcelot(configuration)
             .AddPolly();
 
