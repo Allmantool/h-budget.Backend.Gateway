@@ -1,6 +1,23 @@
 {
   "Routes": [
     {
+      "UpstreamPathTemplate": "/gateway/accounting/data-protection/v1/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "DownstreamPathTemplate": "/data-protection/v1/{everything}",
+      "Priority": 200,
+      "AuthenticationOptions": {
+        "AuthenticationProviderKeys": [ "DataProtectionBearer" ],
+        "AllowedScopes": [ "home-ledger.data-protection.admin" ]
+      },
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "homebudget-accounting-api",
+          "Port": 80
+        }
+      ]
+    },
+    {
       "UpstreamPathTemplate": "/gateway/accounting/notifications/account-hub",
       "UpstreamHttpMethod": [ "GET" ],
 

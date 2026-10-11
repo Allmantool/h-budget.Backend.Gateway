@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
+using HomeBudget.Backend.Gateway.Authorization;
 using HomeBudget.Backend.Gateway.Constants;
 using HomeBudget.Backend.Gateway.Extensions.Logs;
 using HomeBudget.Backend.Gateway.Middlewares;
@@ -15,6 +16,9 @@ namespace HomeBudget.Backend.Gateway.Configuration
 {
     internal static class HealthCheckConfiguration
     {
+        private static readonly string[] ReadyTags = { "ready" };
+        private static readonly string[] CustomTags = { "custom" };
+
         public static IServiceCollection SetUpHealthCheck(
             this IServiceCollection services,
             IConfiguration configuration,
@@ -23,7 +27,13 @@ namespace HomeBudget.Backend.Gateway.Configuration
             services
                 .AddHealthChecks()
                 .AddCheck("heartbeat", () => HealthCheckResult.Healthy())
-                .AddCheck<CustomLogicHealthCheck>(nameof(CustomLogicHealthCheck), tags: ["custom"]);
+                .AddCheck<DataProtectionAuthorizationHealthCheck>(
+                    "data-protection-authorization",
+                    failureStatus: HealthStatus.Unhealthy,
+                    tags: ReadyTags)
+                .AddCheck<CustomLogicHealthCheck>(
+                    nameof(CustomLogicHealthCheck),
+                    tags: CustomTags);
 
             services.AddHealthChecksUI(setupSettings: setup =>
             {

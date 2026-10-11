@@ -24,6 +24,7 @@ internal static class GatewayServiceExtensions
         services.AddControllers();
         services.Configure<MigrationContractOptions>(
             configuration.GetSection(MigrationContractOptions.SectionName));
+        builder.AddDataProtectionAuthorization();
         services.AddOcelot(configuration)
             .AddPolly();
 

@@ -6,6 +6,7 @@ using Serilog.Events;
 
 using HomeBudget.Backend.Gateway.Configuration;
 using HomeBudget.Backend.Gateway.Constants;
+using HomeBudget.Backend.Gateway.Authorization;
 using HomeBudget.Backend.Gateway.Middlewares;
 using HomeBudget.Core.Constants;
 
@@ -41,10 +42,12 @@ namespace HomeBudget.Backend.Gateway.Extensions
             return app
                 .UseHsts()
                 .UseResponseCaching()
-                .UseAuthorization()
                 .UseCorrelationId()
                 .UseHeaderPropagation()
                 .UseRouting()
+                .UseAuthentication()
+                .UseAuthorization()
+                .UseMiddleware<DataProtectionAuthorizationMiddleware>()
                 .UseSerilogRequestLogging(options =>
                 {
                     options.MessageTemplate = "Handled {RequestPath}";
