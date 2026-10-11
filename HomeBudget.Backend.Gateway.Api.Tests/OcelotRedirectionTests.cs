@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using FluentAssertions;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
@@ -13,10 +14,12 @@ using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
 using Ocelot.Provider.Polly;
 
+using HomeBudget.Backend.Gateway.Authorization;
+
 namespace HomeBudget.Backend.Gateway.Api.Tests
 {
     [TestFixture]
-    public class OcelotRedirectionTests
+    internal class OcelotRedirectionTests
     {
         private TestServer _server;
         private HttpClient _client;
@@ -31,6 +34,10 @@ namespace HomeBudget.Backend.Gateway.Api.Tests
                  })
                  .ConfigureServices(services =>
                  {
+                     services.AddAuthentication()
+                         .AddScheme<AuthenticationSchemeOptions, DataProtectionTestAuthenticationHandler>(
+                             DataProtectionAuthorizationDefaults.BearerScheme,
+                             _ => { });
                      services.AddSingleton<MockDownstreamHandler>();
                      services.AddOcelot()
                              .AddPolly()
